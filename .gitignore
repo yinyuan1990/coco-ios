@@ -1,0 +1,60 @@
+# macOS
+.DS_Store
+._*
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcuserdatad/
+*.moved-aside
+*.xcscmblueprint
+*.xccheckout
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.pins
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# 日志 / 崩溃报告
+*.log
+*.ips
+
+# 备份压缩包
+*.zip
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# Claude Code 工作区
+.claude/
+
+# 非 iOS 工程文件
+videodemo/
+*.mobileprovision
+*.cer
+Ai幻境*/
+文档.md
+TestFlight上架指南.md
+Windows端画质控制文档.md
+iOS上架平台指南.md
+1.jpg
+1.png
+2.jpg
+2.png
+3.jpg
+3.png
+4.png
+splash.png
+我的.png
+相片.png
