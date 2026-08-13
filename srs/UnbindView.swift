@@ -22,39 +22,32 @@ struct UnbindView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                Color(.systemGroupedBackground)
+                // 背景色（白色，与"我的"界面一致）
+                Color.white
                     .ignoresSafeArea()
                 
-                VStack(spacing: 24) {
-                    // 设备信息卡片
+                VStack(spacing: 0) {
+                    // 设备信息区域
                     VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .fill(Color.red.opacity(0.1))
-                                .frame(width: 80, height: 80)
-                            
-                            Image(systemName: "desktopcomputer")
-                                .font(.system(size: 36))
-                                .foregroundColor(.red)
-                        }
+                        // 图标
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 40))
+                            .foregroundColor(.primary)
+                            .padding(.top, 40)
                         
-                        VStack(spacing: 8) {
-                            Text("确认解绑")
-                                .font(.system(size: 20, weight: .semibold))
-                            
-                            // 显示设备名称
-                            Text(displayName)
-                                .font(.system(size: 16))
-                                .foregroundColor(.secondary)
-                            
-                            if let time = binding.createdAt {
-                                Text("绑定时间: \(formatTime(time))")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(.secondary)
-                            }
+                        // 设备名称
+                        Text(displayName)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(Color(hex: "1A1A1A"))
+                        
+                        // 绑定时间
+                        if let time = binding.createdAt {
+                            Text("绑定时间: \(formatTime(time))")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color(hex: "808080"))
                         }
                     }
-                    .padding(.top, 32)
+                    .padding(.bottom, 30)
                     
                     // 警告提示
                     HStack(spacing: 12) {
@@ -66,68 +59,59 @@ struct UnbindView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding()
-                    .background(Color.orange.opacity(0.1))
+                    .frame(maxWidth: .infinity)
+                    .background(Color(hex: "F4F4F8"))
                     .cornerRadius(10)
                     .padding(.horizontal, 20)
                     
-                    // 二级密码输入
+                    // 绑定码输入
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("二级密码")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.secondary)
+                        Text("绑定码")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(hex: "808080"))
                         
-                        SecureField("请输入二级密码", text: $secondaryPassword)
+                        SecureField("请输入绑定码", text: $secondaryPassword)
                             .textFieldStyle(.plain)
                             .padding()
-                            .background(Color(.systemBackground))
+                            .background(Color(hex: "F4F4F8"))
                             .cornerRadius(10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color(.systemGray4), lineWidth: 1)
-                            )
                     }
                     .padding(.horizontal, 20)
+                    .padding(.top, 24)
                     
                     Spacer()
                     
-                    // 按钮
-                    VStack(spacing: 12) {
-                        Button(action: performUnbind) {
-                            HStack {
-                                if isUnbinding {
-                                    ProgressView()
-                                        .tint(.white)
-                                } else {
-                                    Text("确认解绑")
-                                }
+                    // 确认解绑按钮
+                    Button(action: performUnbind) {
+                        HStack {
+                            if isUnbinding {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Text("确认解绑")
+                                    .font(.system(size: 18, weight: .semibold))
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(secondaryPassword.isEmpty ? Color.gray : Color.red)
-                            .foregroundColor(.white)
-                            .cornerRadius(10)
                         }
-                        .disabled(secondaryPassword.isEmpty || isUnbinding)
-                        
-                        Button("取消") {
-                            dismiss()
-                        }
-                        .foregroundColor(.secondary)
+                        .frame(width: 160, height: 46)
+                        .background(secondaryPassword.isEmpty ? Color(hex: "CCCCCC") : Color.red)
+                        .foregroundColor(Color(hex: "FAFAFA"))
+                        .cornerRadius(10)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 30)
+                    .disabled(secondaryPassword.isEmpty || isUnbinding)
+                    .padding(.bottom, 40)
                 }
             }
             .navigationTitle("解绑设备")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark")
-                            .foregroundColor(.primary)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color(hex: "1A1A1A"))
                     }
                 }
-            }
+            })
             .alert(isSuccess ? "解绑成功" : "解绑失败", isPresented: $showResultAlert) {
                 Button("确定") {
                     if isSuccess {
@@ -244,4 +228,3 @@ struct UnbindView: View {
         onUnbindSuccess: {}
     )
 }
-

@@ -2,107 +2,127 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showingProfile: Bool = false
-
+    
     var body: some View {
-        NavigationView {
-        // 保持你现有的UI结构，只修改导航部分
         ZStack {
+            // 底层背景色
+            Color(hex: "F4F4F9")
+                .ignoresSafeArea()
+            
+            // 顶部渐变背景
+            VStack {
             LinearGradient(
-                gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 30) {
-                Text("首页")
-                    .font(.system(size: 24))
-                    .font(.largeTitle)
-                    .foregroundColor(.primary)
-                    .padding(.top, 20)
+                    gradient: Gradient(stops: [
+                        .init(color: Color(hex: "B1E8FA"), location: 0),
+                        .init(color: Color(hex: "C6E0FA"), location: 0.5288),
+                        .init(color: Color(hex: "F4F4F9"), location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 249)
                 
-                // 温馨提示卡片 - 保持原有代码
-                VStack(alignment: .leading, spacing: 15) {
-                    HStack {
-                        Image(systemName: "lightbulb.fill")
-                            .foregroundColor(.orange)
-                            .font(.title2)
+                Spacer()
+            }
+            .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // 顶部标题栏
+                HStack {
+                    Spacer()
+                    
+                Text("首页")
+                        .font(.custom("PingFang SC", size: 18))
+                        .fontWeight(.semibold)
+                        .foregroundColor(Color(hex: "1A1A1A"))
+                    
+                    Spacer()
+                }
+                .frame(height: 44)
+                .padding(.top, 44) // 状态栏高度
+                
+                // 主要内容区域
+                VStack(alignment: .leading, spacing: 17) {
+                    // 温馨提示部分
+                    VStack(alignment: .leading, spacing: 11) {
                         Text("温馨提示")
-                            .font(.headline)
+                            .font(.custom("PingFang SC", size: 18))
                             .fontWeight(.semibold)
+                            .foregroundColor(Color(hex: "1A1A1A"))
+                    
+                        Text("要使用我们的产品。您需要两台手机设备配合，\n一台架设在家里，作为监控，一台家长使用观看。")
+                            .font(.custom("PingFang HK", size: 12))
+                            .foregroundColor(Color(hex: "666666"))
+                            .lineSpacing(5)
                     }
                     
-                    Text("要使用我们的产品，您需要一台手机和一台PC配合，手机作为监控端采集画面，PC端进行观看和管理。")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .lineLimit(nil)
-                        .multilineTextAlignment(.leading)
-                }
-                .padding(20)
+                    // 卡片区域
+                    VStack(spacing: 10) {
+                        // 家长端卡片
+                        Button(action: {
+                            // 家长端暂无效果
+                        }) {
+                            HStack {
+                                Text("家长端")
+                                    .font(.custom("PingFang SC", size: 16))
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(Color(hex: "1A1A1A"))
+                                
+                                Spacer()
+                                
+                                Image("jiachang")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 92, height: 94)
+                            }
+                            .padding(.leading, 36)
+                            .padding(.trailing, 28)
+                            .padding(.vertical, 2)
+                            .frame(height: 98)
                 .background(Color.white)
-                .cornerRadius(15)
-                .shadow(color: .gray.opacity(0.2), radius: 8, x: 0, y: 4)
-                .padding(.horizontal, 20)
-                
-                // 按钮区域
-                VStack(spacing: 20) {
-                    // 监控端按钮
+                            .cornerRadius(12)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        
+                        // 监控端卡片
                     Button(action: {
                         appState.navigateToMonitorLogin()
                     }) {
                         HStack {
-                            Image("monitor_icon")
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 60, height: 60)
-                                .background(Color.green.opacity(0.1))
-                                .clipShape(Circle())
-                            
                             Text("监控端")
-                                .font(.title2)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primary)
+                                    .font(.custom("PingFang SC", size: 16))
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(Color(hex: "1A1A1A"))
                             
                             Spacer()
                             
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.gray)
-                        }
-                        .padding(20)
+                                Image("kongzhiduan")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 118, height: 94)
+                            }
+                            .padding(.leading, 36)
+                            .padding(.trailing, 28)
+                            .padding(.vertical, 2)
+                            .frame(height: 98)
                         .background(Color.white)
-                        .cornerRadius(15)
-                        .shadow(color: .gray.opacity(0.2), radius: 8, x: 0, y: 4)
+                            .cornerRadius(12)
                     }
                     .buttonStyle(PlainButtonStyle())
+                    }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 15)
+                .padding(.top, 18)
                 
                 Spacer()
+                
+                // 底部指示器
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color(hex: "1A1A1A"))
+                    .frame(width: 134, height: 5)
+                    .padding(.bottom, 8)
             }
         }
-        .navigationTitle("幻境2")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
-                    showingProfile = true
-                }) {
-                    HStack(spacing: 4) {
-                        Text("我的")
-                            .font(.system(size: 15))
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16))
-                    }
-                    .foregroundColor(.primary)
-                }
-            }
-        }
-        .sheet(isPresented: $showingProfile) {
-            ProfileView()
-                .environmentObject(appState)
-        }
-        } // NavigationView
     }
 }
 

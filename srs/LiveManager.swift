@@ -1,6 +1,5 @@
 import Foundation
 import AVFoundation
-import HaishinKit
 import CoreMedia
 
 
@@ -23,7 +22,7 @@ final class LiveManager: ObservableObject {
     @Published var log: [String] = []
 
     // MARK: - 服务器/推流地址
-    @Published var serverIP = ""
+    @Published var serverIP = ""  // 从登录接口获取
     @Published var app = "tenantA"
     @Published var streamKey = "" // 登录后从 permanent_token 获取
 
@@ -54,6 +53,11 @@ final class LiveManager: ObservableObject {
     // MARK: - EV
     @Published var exposureBiasEV: Float = 0
     private var pendingExposureBias: Float?
+
+    // MARK: - 防频闪快门
+    @Published var antiFlickerEnabled = true
+    @Published var powerLineFrequency: Int = 50       // 50Hz(中国) 或 60Hz
+    @Published var shutterSpeedDenominator: Int = 100  // 1/100s，用户可动态调高
 
     // MARK: - 音频（保留占位，不使用也不影响）
     private var hasAttachedMic = false
@@ -189,6 +193,46 @@ final class LiveManager: ObservableObject {
         }
     }
 
+    // MARK: - 防频闪快门控制（方案B：fps同步 + 任意快门）
+    // 前提：fps 必须是 50 的倍数（50/100），帧间隔与50Hz同步
+    // 快门可以任意设，不需要 snap，因为帧率同步保证每帧相位一致
+    func applyAntiFlickerShutter(_ denominator: Int) {
+        guard let dev = cameraDevice else {
+            print("📷 快门设置暂存: 1/\(denominator)s（相机未挂）")
+            shutterSpeedDenominator = denominator
+            return
+        }
+
+        let clamped = max(50, min(denominator, 8000))
+        let desiredDuration = 1.0 / Double(clamped)
+
+        // 确保不超过设备支持范围
+        let minDur = dev.activeFormat.minExposureDuration.seconds
+        let maxDur = dev.activeFormat.maxExposureDuration.seconds
+        let finalDuration = max(minDur, min(desiredDuration, maxDur))
+        let finalDenominator = Int(round(1.0 / finalDuration))
+
+        do {
+            try dev.lockForConfiguration()
+
+            let duration = CMTime(value: 1, timescale: CMTimeScale(finalDenominator))
+
+            // ISO 补偿：维持当前亮度
+            let currentDuration = dev.exposureDuration.seconds
+            let currentISO = dev.iso
+            var newISO = Float(Double(currentISO) * currentDuration / finalDuration)
+            newISO = max(dev.activeFormat.minISO, min(newISO, dev.activeFormat.maxISO))
+
+            dev.setExposureModeCustom(duration: duration, iso: newISO, completionHandler: nil)
+            dev.unlockForConfiguration()
+
+            shutterSpeedDenominator = finalDenominator
+            print("🔒 快门: 1/\(finalDenominator)s, ISO=\(Int(newISO)) (fps=\(fps)同步防频闪)")
+        } catch {
+            print("❌ 快门设置失败: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - 服务器轻配置入口（type+zoom+direction+EV）
     func applyRemoteConfig(_ cfg: ThinRemoteConfig) {
         print("📥 远端配置: type=\(cfg.type), zoom=\(cfg.zoom), direction=\(cfg.direction), hasAttachedCamera=\(hasAttachedCamera), isPublishing=\(isPublishing), exposureBias=\(cfg.exposureBias)")
@@ -260,6 +304,11 @@ final class LiveManager: ObservableObject {
         if let wantFPS = cfg.fps {                 // 新增：10–60
             Task { await self.applyFPSOverride(wantFPS) }
         }
+
+        // 后端/用户指定快门（可选），如 100 表示 1/100s
+        if let wantShutter = cfg.shutterSpeed {
+            applyAntiFlickerShutter(wantShutter)
+        }
     }
 
     // MARK: - Token
@@ -285,7 +334,7 @@ final class LiveManager: ObservableObject {
                 var previewV = VideoCodecSettings(
                     videoSize: CGSize(width: 1280, height: 720),
                     bitRate: 800_000,
-                    profileLevel: "H264_Baseline_AutoLevel",
+                    profileLevel: "H264_High_AutoLevel",
                     maxKeyFrameIntervalDuration: 1,
                     dataRateLimits: nil,
                     isHardwareEncoderEnabled: false
@@ -349,16 +398,16 @@ final class LiveManager: ObservableObject {
         switch status.code {
         case "NetStream.Publish.Start":
             isPublishing = true
-            print("🔴 推流已开始")
             WebSocketManager.isPublishingFlag = 1
+            print("🟢 [publishStatus] 1 ← RTMP推流开始")
         case "NetStream.Unpublish.Success":
             isPublishing = false
             WebSocketManager.isPublishingFlag = 0
-            print("⏹️ 推流已停止")
+            print("🔴 [publishStatus] 0 ← RTMP推流停止")
         case "NetStream.Connect.Failed", "NetStream.Publish.BadName":
             isPublishing = false
             WebSocketManager.isPublishingFlag = 0
-            print("❌ 推流错误: \(status.description)")
+            print("🔴 [publishStatus] 0 ← RTMP推流错误: \(status.description)")
         default:
             print("📡 RTMP状态: \(status.code) - \(status.description)")
         }
@@ -393,13 +442,13 @@ final class LiveManager: ObservableObject {
             try device.lockForConfiguration()
             
             // ✅ 先关自动 HDR 再改 HDR，顺序非常关键
-            // 必须先关闭自动调节，再设置 isVideoHDREnabled
-            // 否则 iOS 15.x 会抛出 NSException（Swift do-catch 无法捕获）
-            // automaticallyAdjustsVideoHDREnabled 从 iOS 8.0 就有，不需要 #available 守卫
-            if device.automaticallyAdjustsVideoHDREnabled {
-                device.automaticallyAdjustsVideoHDREnabled = false
-            }
-
+           if #available(iOS 17.0, *) {
+               if device.automaticallyAdjustsVideoHDREnabled {
+                   device.automaticallyAdjustsVideoHDREnabled = false
+               }
+           }
+            
+            
             if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
             if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
             if device.isVideoHDREnabled { device.isVideoHDREnabled = false }
@@ -442,8 +491,16 @@ final class LiveManager: ObservableObject {
                     print("✅ \(position == .back ? "后" : "前")置摄像头已连接 (hasAttachedCamera=\(self.hasAttachedCamera))")
                 }
 
-                // 首挂后应用暂存 EV
-                if let ev = self.pendingExposureBias {
+                // 等自动曝光稳定后再切自定义快门
+                try await Task.sleep(nanoseconds: 500_000_000)
+
+                // 防频闪快门
+                if self.antiFlickerEnabled {
+                    self.applyAntiFlickerShutter(self.shutterSpeedDenominator)
+                }
+
+                // 首挂后应用暂存 EV（防频闪模式下 EV 不生效，跳过）
+                if !self.antiFlickerEnabled, let ev = self.pendingExposureBias {
                     self.pendingExposureBias = nil
                     self.setExposureBias(ev: ev)
                     await MainActor.run { print("🔁 首挂后应用EV: \(ev)") }
@@ -540,6 +597,7 @@ final class LiveManager: ObservableObject {
         statusTask?.cancel(); statusTask = nil
         connectionTask?.cancel(); connectionTask = nil
         WebSocketManager.isPublishingFlag = 0
+        print("🔴 [publishStatus] 0 ← RTMP清理资源")
         if let s = pubStream {
             await mixer.removeOutput(s)
             do { try await s.close() } catch { print("ℹ️ close pubStream: \(error.localizedDescription)") }

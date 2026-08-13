@@ -1,14 +1,15 @@
 import SwiftUI
 
-// MARK: - Splash 启动页（显示 Ai Logo，1秒后跳转登录）
+// MARK: - Splash 启动页（老幻境2视觉：渐变+网格+sparkles+App名；1秒后跳转登录）
+// coco/aihj：视觉恢复为老 iOS（幻境2）样式；跳转沿用新版 navigateToMonitorLogin()
 struct SplashView: View {
     @EnvironmentObject var appState: AppState
-    
+
     // 动画状态
     @State private var logoScale: CGFloat = 0.5
     @State private var logoOpacity: Double = 0
     @State private var glowOpacity: Double = 0
-    
+
     var body: some View {
         ZStack {
             // 背景渐变 - 科技感深色
@@ -22,11 +23,10 @@ struct SplashView: View {
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-            
+
             // 背景装饰 - 网格线条
             GeometryReader { geometry in
                 Canvas { context, size in
-                    // 绘制网格线
                     for i in stride(from: 0, to: size.width, by: 40) {
                         var path = Path()
                         path.move(to: CGPoint(x: i, y: 0))
@@ -42,27 +42,24 @@ struct SplashView: View {
                 }
             }
             .ignoresSafeArea()
-            
+
             VStack(spacing: 20) {
                 Spacer()
 
                 // App 图标
                 ZStack {
-                    // 外发光
                     Image(systemName: "sparkles")
                         .font(.system(size: 80, weight: .bold))
                         .foregroundColor(.cyan.opacity(0.3))
                         .blur(radius: 20)
                         .opacity(glowOpacity)
 
-                    // 内发光
                     Image(systemName: "sparkles")
                         .font(.system(size: 80, weight: .bold))
                         .foregroundColor(.cyan.opacity(0.5))
                         .blur(radius: 8)
                         .opacity(glowOpacity)
 
-                    // 主图标
                     Image(systemName: "sparkles")
                         .font(.system(size: 80, weight: .bold))
                         .foregroundStyle(
@@ -110,16 +107,13 @@ struct SplashView: View {
                 logoScale = 1.0
                 logoOpacity = 1.0
             }
-            
-            // 发光动画稍晚一点
             withAnimation(.easeIn(duration: 0.8).delay(0.2)) {
                 glowOpacity = 1.0
             }
-            
             // 1秒后跳转到登录页
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 withAnimation(.easeInOut(duration: 0.3)) {
-                    appState.navigateToLogin()
+                    appState.navigateToMonitorLogin()
                 }
             }
         }
@@ -130,4 +124,3 @@ struct SplashView: View {
     SplashView()
         .environmentObject(AppState())
 }
-

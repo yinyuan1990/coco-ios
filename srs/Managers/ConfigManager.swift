@@ -195,8 +195,9 @@ class ConfigManager: ObservableObject {
     public func getCurrentConfigOrDefault() -> ThinRemoteConfig {
         return currentThinConfig ?? ThinRemoteConfig(
             type: StreamProfile.standard.rawValue,
-            zoom: 0.5,  // 🔥 默认超广角（iPhone 11+ 支持）
-            ptype: "standard"
+            zoom: 1.0,  // 🔥 默认标准焦距
+            ptype: "standard",
+            focus: 0.0  // 超焦距默认值：远近都清楚
         )
     }
     

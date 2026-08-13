@@ -26,10 +26,11 @@ class VolumeButtonManager: NSObject, ObservableObject {
     
     private let targetVolume: Float = 0.5
     
+    // 🔥 追踪 KVO 观察者是否已添加（防止 iOS 15 崩溃）
+    private var isKVOObserverAdded: Bool = false
+    
     func startMonitoring(onVolumeChange: @escaping () -> Void) {
         self.volumeChangeHandler = onVolumeChange
-        
-        print("🔊 [VolumeButtonManager] 开始初始化音量监听...")
         
         // 1️⃣ 设置音频会话
         let audioSession = AVAudioSession.sharedInstance()
@@ -37,48 +38,36 @@ class VolumeButtonManager: NSObject, ObservableObject {
             try audioSession.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try audioSession.setActive(true)
             lastVolume = audioSession.outputVolume
-            print("✅ 音频会话设置成功，当前音量: \(lastVolume)")
         } catch {
             print("❌ 音频会话设置失败: \(error)")
 }
 
-        // 2️⃣ 创建隐藏的 MPVolumeView（必须添加到视图层级才能工作）
+        // 2️⃣ 创建隐藏的 MPVolumeView
         volumeView = MPVolumeView(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
         volumeView?.showsRouteButton = false
-        volumeView?.showsVolumeSlider = true  // 🔥 必须显示slider才能监听
+        volumeView?.showsVolumeSlider = true
         
         if let keyWindow = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first?.windows
-            .first(where: { $0.isKeyWindow }) {
-            keyWindow.addSubview(volumeView!)
-            print("✅ MPVolumeView 已添加到窗口")
-        } else {
-            print("❌ 无法获取 keyWindow")
+            .first(where: { $0.isKeyWindow }),
+           let vv = volumeView {
+            keyWindow.addSubview(vv)
         }
         
         // 3️⃣ 延迟获取 slider 引用
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self = self, let volumeView = self.volumeView else { return }
-            
-            // 递归查找 slider
             self.volumeSlider = self.findSlider(in: volumeView)
-            if self.volumeSlider != nil {
-                print("✅ 音量slider获取成功")
-            } else {
-                print("⚠️ 音量slider获取失败")
-            }
             
-            // 初始化到中间值（确保音量键可以双向触发）
+            // 初始化到中间值
             let currentVolume = AVAudioSession.sharedInstance().outputVolume
-            print("🔊 初始音量: \(currentVolume)")
             if currentVolume < 0.1 || currentVolume > 0.9 {
-                print("🔊 音量过于极端，重置到中间值")
                 self.setVolumeInternal(self.targetVolume)
             }
         }
         
-        // 4️⃣ 使用 NotificationCenter 监听系统音量变化（更可靠）
+        // 4️⃣ 使用 NotificationCenter 监听系统音量变化
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(volumeDidChange(_:)),
@@ -87,9 +76,12 @@ class VolumeButtonManager: NSObject, ObservableObject {
         )
         
         // 5️⃣ 同时使用 KVO 作为备选方案
+        if !isKVOObserverAdded {
         audioSession.addObserver(self, forKeyPath: "outputVolume", options: [.new, .old], context: nil)
+            isKVOObserverAdded = true
+        }
         
-        print("✅ 音量键监听已启动（NotificationCenter + KVO 双保险）")
+        print("✅ 音量键监听已启动")
                     }
     
     @objc private func volumeDidChange(_ notification: Notification) {
@@ -109,24 +101,16 @@ class VolumeButtonManager: NSObject, ObservableObject {
     
     private func handleVolumeChange(oldVolume: Float, newVolume: Float, source: String) {
         // 如果正在恢复音量，忽略
-        if isRestoringVolume {
-            print("🔊 [\(source)] 忽略：正在恢复音量中...")
-            return
-        }
+        if isRestoringVolume { return }
         
         // 防抖：距离上次触发不到 0.3 秒，忽略
         let now = Date()
-        if now.timeIntervalSince(lastTriggerTime) < 0.3 {
-            print("🔊 [\(source)] 忽略：防抖中...")
-            return
-        }
+        if now.timeIntervalSince(lastTriggerTime) < 0.3 { return }
         
         let diff = abs(newVolume - oldVolume)
         if diff > 0.01 {
             lastTriggerTime = now
             lastVolume = newVolume
-            
-            print("🔊🔊🔊 [\(source)] 音量键触发: \(oldVolume) -> \(newVolume), diff=\(diff)")
             
             // 触发回调
             DispatchQueue.main.async {
@@ -142,7 +126,6 @@ class VolumeButtonManager: NSObject, ObservableObject {
                 
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     self.isRestoringVolume = false
-                    print("🔊 [恢复完成] 音量已重置到: \(self.targetVolume)")
                 }
             }
         }
@@ -164,21 +147,32 @@ class VolumeButtonManager: NSObject, ObservableObject {
         if let slider = volumeSlider {
             DispatchQueue.main.async {
                 slider.value = volume
-                print("🔊 [内部] 通过slider设置音量: \(volume)")
         }
         } else {
-            // 备选方案
             MPVolumeView.setVolume(volume)
                             }
     }
     
     func stopMonitoring() {
         NotificationCenter.default.removeObserver(self, name: NSNotification.Name("AVSystemController_SystemVolumeDidChangeNotification"), object: nil)
+        
+        // 🔥 只有在 KVO 观察者已添加时才移除（防止 iOS 15 崩溃）
+        if isKVOObserverAdded {
         AVAudioSession.sharedInstance().removeObserver(self, forKeyPath: "outputVolume")
+            isKVOObserverAdded = false
+        }
+        
         volumeView?.removeFromSuperview()
         volumeView = nil
         volumeSlider = nil
-        print("✅ 音量键监听已停止")
+    }
+    
+    // 🔥 确保对象销毁时清理 KVO 观察者（防止 iOS 15 崩溃）
+    deinit {
+        if isKVOObserverAdded {
+            AVAudioSession.sharedInstance().removeObserver(self, forKeyPath: "outputVolume")
+        }
+        NotificationCenter.default.removeObserver(self)
         }
     
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
@@ -193,72 +187,334 @@ class VolumeButtonManager: NSObject, ObservableObject {
 
 extension MPVolumeView {
     static func setVolume(_ volume: Float) {
-        // 🔥 使用更可靠的方式设置音量
         let volumeView = MPVolumeView(frame: .zero)
         
         // 方法1：直接查找 slider
         if let slider = volumeView.subviews.first(where: { $0 is UISlider }) as? UISlider {
             DispatchQueue.main.async {
                 slider.value = volume
-                print("🔊 [setVolume] 通过slider设置音量: \(volume)")
                             }
             return
         }
         
         // 方法2：使用私有API（备选方案）
-        // 注意：这是私有API，App Store 审核可能会拒绝，但本地测试有效
         let selector = NSSelectorFromString("setVolume:")
         if volumeView.responds(to: selector) {
             volumeView.perform(selector, with: volume)
-            print("🔊 [setVolume] 通过私有API设置音量: \(volume)")
-        } else {
-            print("⚠️ [setVolume] 无法设置音量（slider和私有API都失败）")
         }
     }
 }
 
-// MARK: - 小组件：底部控制面板（只保留切换镜头和清晰度）
+// MARK: - 自定义滑块组件（黄色圆形拖块）
+struct CustomSlider: View {
+    let label: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let displayText: String
+    let onChanged: ((Double) -> Void)?
+    
+    init(label: String, value: Binding<Double>, range: ClosedRange<Double>, displayText: String? = nil, onChanged: ((Double) -> Void)? = nil) {
+        self.label = label
+        self._value = value
+        self.range = range
+        self.displayText = displayText ?? String(format: "%.2f", value.wrappedValue)
+        self.onChanged = onChanged
+    }
+    
+    var body: some View {
+        HStack(spacing: 20) {
+            // 标签
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundColor(Color(hex: "1A1A1A"))
+                .frame(width: 42, alignment: .leading)
+            
+            // 滑块
+            GeometryReader { geometry in
+                let sliderWidth = geometry.size.width
+                let progress = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+                let thumbX = sliderWidth * CGFloat(progress)
+                
+                ZStack(alignment: .leading) {
+                    // 背景轨道
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color(hex: "DBDBE0"))
+                        .frame(height: 4)
+                    
+                    // 进度填充
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color(hex: "008BFF"))
+                        .frame(width: max(0, thumbX), height: 4)
+                    
+                    // 黄色圆形拖块
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(hex: "FFD65B"), Color(hex: "FBAC00")],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 16, height: 16)
+                        .shadow(color: Color(hex: "FBAC00").opacity(0.5), radius: 1, x: 0, y: 2)
+                        .offset(x: max(0, min(thumbX - 8, sliderWidth - 16)))
+                        .gesture(
+                            DragGesture()
+                                .onChanged { gesture in
+                                    let newProgress = min(max(0, gesture.location.x / sliderWidth), 1)
+                                    let newValue = range.lowerBound + (range.upperBound - range.lowerBound) * Double(newProgress)
+                                    value = newValue
+                                    onChanged?(newValue)
+                                }
+                        )
+                }
+            }
+            .frame(height: 16)
+            
+            // 值显示
+            Text(displayText)
+                .font(.system(size: 14))
+                .foregroundColor(Color(hex: "1A1A1A"))
+                .frame(width: 60, alignment: .trailing)
+        }
+        .padding(.horizontal, 18)
+        .frame(height: 20)
+    }
+}
+
+// MARK: - 清晰度单选按钮
+struct QualityRadioButton: View {
+    let profile: LadderProfile
+    let isSelected: Bool
+    let action: () -> Void
+    
+    private var profileName: String {
+        switch profile {
+        case .p4k: return "超高清"
+        case .ultra: return "超高帧"
+        case .high: return "超清"
+        case .standard: return "高清"
+        case .low: return "超低网"
+        }
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color(hex: "1197D6") : Color(hex: "999999"), lineWidth: 1)
+                        .frame(width: 15, height: 15)
+                    
+                    if isSelected {
+                        Circle()
+                            .fill(Color(hex: "1197D6"))
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .frame(width: 16, height: 16)
+                
+                Text(profileName)
+                    .font(.system(size: 10))
+                    .foregroundColor(Color(hex: "1A1A1A"))
+            }
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - 右侧操作面板（滑块控件）
+struct SettingsPanelView: View {
+    @ObservedObject var rtc: WebRTCManager
+    
+    // 本地 UI 状态（仅显示用）
+    @State private var exposureValue: Double = 240  // 曝光：60-600（与后端 cjfps 同步）
+    @State private var focusValue: Double = 0.5    // 焦距：0.00-1.00
+    @State private var fluencyValue: Double = 100  // 流畅：0-100
+    @State private var brightnessValue: Double = 0 // 亮度：-2.00 到 8.00
+    @State private var selectedProfile: LadderProfile = .standard  // 清晰度（仅 UI）
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // 内部灰色卡片
+            VStack(spacing: 12) {
+                // 曝光滑块（与后端 cjfps 同步，范围 60-600）
+                CustomSlider(
+                    label: "曝光",
+                    value: $exposureValue,
+                    range: 60...600,
+                    displayText: String(format: "%.0f", exposureValue)
+                )
+                
+                // 分隔线
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: 1)
+                
+                // 焦距滑块（仅 UI 显示，与后端同步，不实际应用）
+                CustomSlider(
+                    label: "焦距",
+                    value: $focusValue,
+                    range: 0...1,
+                    displayText: String(format: "%.2f", focusValue)
+                )
+                
+                // 分隔线
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: 1)
+                
+                // 流畅滑块（右边始终显示"清晰"）
+                CustomSlider(
+                    label: "流畅",
+                    value: $fluencyValue,
+                    range: 0...100,
+                    displayText: "清晰"
+                )
+                
+                // 分隔线
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: 1)
+                
+                // 亮度滑块
+                CustomSlider(
+                    label: "亮度",
+                    value: $brightnessValue,
+                    range: -2...8,
+                    displayText: String(format: "%.2f", brightnessValue)
+                )
+                
+                // 分隔线
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(height: 1)
+                
+                // 档位选择（仅 UI 效果，不实际调用，与后端同步）
+                HStack(spacing: 12) {
+                        QualityRadioButton(
+                            profile: .standard,
+                            isSelected: selectedProfile == .standard,
+                            action: { selectedProfile = .standard }  // 仅 UI 效果
+                        )
+                        
+                        QualityRadioButton(
+                            profile: .high,
+                            isSelected: selectedProfile == .high,
+                            action: { selectedProfile = .high }  // 仅 UI 效果
+                        )
+                        
+                        QualityRadioButton(
+                            profile: .p4k,
+                            isSelected: selectedProfile == .p4k,
+                            action: { selectedProfile = .p4k }  // 仅 UI 效果
+                        )
+                        
+                        QualityRadioButton(
+                            profile: .ultra,
+                            isSelected: selectedProfile == .ultra,
+                            action: { selectedProfile = .ultra }  // 仅 UI 效果
+                        )
+
+                        QualityRadioButton(
+                            profile: .low,
+                            isSelected: selectedProfile == .low,
+                            action: { selectedProfile = .low }  // 仅 UI 效果
+                        )
+
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .frame(height: 20)
+                .onChange(of: rtc.currentProfile, perform: { newProfile in
+                    // 后端 STOMP 下发时同步 UI
+                    selectedProfile = newProfile
+                })
+            }
+            .padding(.vertical, 20)
+            .background(Color(hex: "F4F4F8"))
+            .cornerRadius(12)
+        }
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(16, corners: [.topLeft, .topRight])
+        .onAppear {
+            // 同步后端数据
+            exposureValue = Double(rtc.cjfpsValue)  // 🔥 曝光与后端 cjfps 同步
+            focusValue = Double(rtc.focusDistance)
+            selectedProfile = rtc.currentProfile
+        }
+        .onChange(of: rtc.cjfpsValue, perform: { newCjfps in
+            // 🔥 后端下发 cjfps 时同步 UI
+            exposureValue = Double(newCjfps)
+        })
+        .onChange(of: rtc.focusDistance, perform: { newFocus in
+            // 后端下发时同步 UI
+            focusValue = Double(newFocus)
+        })
+    }
+}
+
+// MARK: - 小组件：底部控制面板（只保留清晰度）
 struct ControlPanelView: View {
     @ObservedObject var rtc: WebRTCManager
     
     // 档位名称（简短）
     private func profileName(_ p: LadderProfile) -> String {
         switch p {
-        case .p4k: return "4K"
-        case .ultra: return "超清"
-        case .high: return "高清"
-        case .standard: return "标清"
+        case .p4k: return "超高清"
+        case .ultra: return "超高帧"
+        case .high: return "超清"
+        case .standard: return "高清"
+        case .low: return "超低网"
         }
+    }
+
+    // MARK: - ⭐ §53.9 会员已开通的档位标绿
+    //
+    // 会员等级与档位的对应（用户口径：**等级1 高清会员对应前端 2 个档位**）：
+    //   等级1 高清会员   → 超低网 + 高清            （2 档）
+    //   等级2 超清会员   → 上面 + 超清              （3 档）
+    //   等级3 超高清会员 → 上面 + 超高清            （4 档）
+    //   等级4 超高帧会员 → 上面 + 超高帧            （5 档，全开）
+    // 即 `档位门槛 <= 会员等级` 即为已开通；超低网与高清同为门槛 1。
+    private func profileRequiredLevel(_ p: LadderProfile) -> Int {
+        switch p {
+        case .low:      return 1   // 超低网：与高清同属等级1
+        case .standard: return 1   // 高清
+        case .high:     return 2   // 超清
+        case .p4k:      return 3   // 超高清
+        case .ultra:    return 4   // 超高帧
+        }
+    }
+
+    /// 该档位是否已随会员开通（未激活=一个都不算开通，不标绿）
+    private func isProfileUnlocked(_ p: LadderProfile) -> Bool {
+        guard UserDefaults.standard.bool(forKey: "activated") else { return false }
+        let level = UserDefaults.standard.integer(forKey: "activation_level")
+        return profileRequiredLevel(p) <= level
     }
 
     var body: some View {
         // ✅ 横屏模式：水平排列
         HStack(spacing: 16) {
-            // 前/后摄像头切换
-            Button(action: { rtc.toggleCamera() }) {
-                VStack(spacing: 2) {
-                Image(systemName: "arrow.triangle.2.circlepath.camera")
-                        .font(.system(size: 18))
-                    Text("切换")
-                        .font(.system(size: 9))
-                }
-                        .foregroundColor(.white)
-                }
-            .frame(width: 50, height: 50)
-                .background(Color.black.opacity(0.6))
-                .clipShape(Circle())
-                
             // 档位切换（清晰度）
             HStack(spacing: 6) {
-                ForEach([LadderProfile.standard, .high, .ultra, .p4k], id: \.self) { profile in
+                // ⭐ 2026-08-01 用户要求：主页档位「超高清」「超高帧」互换显示位置（名称/等级不变，仅顺序）
+                ForEach([LadderProfile.standard, .high, .ultra, .p4k, .low], id: \.self) { profile in
+                    let selected = (rtc.currentProfile == profile)
+                    let unlocked = isProfileUnlocked(profile)
                     Button(action: {
                         rtc.applyProfile(profile)
                     }) {
                         Text(profileName(profile))
-                            .font(.system(size: 10, weight: rtc.currentProfile == profile ? .bold : .regular))
-                            .foregroundColor(rtc.currentProfile == profile ? .yellow : .white)
+                            .font(.system(size: 10, weight: selected ? .bold : .regular))
+                            .foregroundColor(selected ? .yellow : .white)
                             .frame(width: 40, height: 30)
-                            .background(rtc.currentProfile == profile ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
+                            // 选中仍是蓝底（保持原有辨识）；未选中但已随会员开通 → 绿底标注
+                            .background(selected ? Color.blue.opacity(0.8)
+                                                 : (unlocked ? Color.green.opacity(0.55)
+                                                             : Color.black.opacity(0.6)))
                             .cornerRadius(6)
                     }
                 }
@@ -269,9 +525,80 @@ struct ControlPanelView: View {
     }
 }
 
+// MARK: - 亮度调节滑块（用DragGesture实现，和CustomSlider一样不卡）
+struct BrightnessSliderView: View {
+    @State private var brightness: Double = 0.5
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("亮度")
+                .font(.system(size: 10))
+                .foregroundColor(.white)
+                .frame(width: 28)
+
+            GeometryReader { geometry in
+                let sliderWidth = geometry.size.width
+                let progress = brightness
+                let thumbX = sliderWidth * CGFloat(progress)
+
+                ZStack(alignment: .leading) {
+                    // 背景轨道
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color.white.opacity(0.3))
+                        .frame(height: 4)
+
+                    // 进度填充
+                    RoundedRectangle(cornerRadius: 24)
+                        .fill(Color.white)
+                        .frame(width: max(0, thumbX), height: 4)
+
+                    // 圆形拖块
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 16, height: 16)
+                        .shadow(color: Color.black.opacity(0.3), radius: 2, x: 0, y: 1)
+                        .offset(x: max(0, min(thumbX - 8, sliderWidth - 16)))
+                }
+                // 整个轨道区域都可拖动（不只是小圆点）
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let newProgress = min(max(0, gesture.location.x / sliderWidth), 1)
+                            brightness = newProgress
+                            UIScreen.main.brightness = CGFloat(newProgress)
+                        }
+                )
+            }
+            .frame(height: 30)  // 加大触摸区域
+
+            Text("\(Int(brightness * 100))%")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.white)
+                .frame(width: 32)
+        }
+        .onAppear {
+            brightness = Double(UIScreen.main.brightness)
+        }
+    }
+}
+
 // MARK: - 主视图
 struct ContentView: View {
     @StateObject var rtc = WebRTCManager()
+    @ObservedObject var h265 = H265Support.shared   // ⭐ H265：左上角编码显示（H264/H265）
+
+    // ⭐ §53.2 左上角 PC 状态：在线（PC_PRESENCE 心跳）× 在看（拉流心跳）两两组合。
+    //   绿=在线且出画面；橙=在线但没画面（→ 查拉流/协商，不是账号或网络问题）；红=对方没上线。
+    private var pcStatusText: String {
+        if !rtc.pcOnline && !rtc.viewerConnected { return "PC未上线" }
+        // ⭐ 2026-08-01 用户拍板：主页**不显示**观看端数量（此前把"不能显示数量"理解反了加了台数，撤掉）
+        return rtc.viewerConnected ? "PC在线·在看" : "PC在线·未出画面"
+    }
+    private var pcStatusColor: Color {
+        if !rtc.pcOnline && !rtc.viewerConnected { return .red }
+        return rtc.viewerConnected ? .green : .orange
+    }
     @EnvironmentObject var appState: AppState
     @Environment(\.scenePhase) private var scenePhase  // ✅ App 生命周期
 
@@ -280,9 +607,10 @@ struct ContentView: View {
     @State private var isBlackout: Bool = false
     @State private var savedBrightness: CGFloat? = nil
     
-    // 🔥 滑动黑屏：滑动5次触发
+    // 🔥 滑动黑屏：同一方向滑动5次触发
     @State private var swipeCount: Int = 0
     @State private var lastSwipeTime: Date = Date()
+    @State private var lastSwipeDirection: String = ""  // "up"/"down"/"left"/"right"
     
     // 导航到个人中心
     @State private var showingProfile: Bool = false
@@ -306,6 +634,16 @@ struct ContentView: View {
     @State private var showTrialEndAlert: Bool = false
     @State private var trialEndMessage: String = ""
     @State private var isTrialEnded: Bool = false
+
+    // ⭐ 需求#13（2026-07-31）：版本更新提示（登录响应带的最新版本 ≠ 本地版本 → 推流前弹一次，软提示）
+    @State private var showUpdatePrompt: Bool = false
+    @State private var updatePromptText: String = ""
+    @State private var updatePromptShown: Bool = false
+
+    // coco/aihj：§56.11 留言回复 / §59 登录广告 / §60 邀请活动的弹层状态已移除（后端无对应接口）
+
+    /// 采集实验面板（format/颜色滑块）— 隐藏 UI，保留代码
+    private let showCaptureExperimentPanel = false
     
     // 🔥 激活页面
     @State private var showingActivation: Bool = false
@@ -315,55 +653,309 @@ struct ContentView: View {
     @State private var lastShownStageEnded: Int = 0
 
 
-    // 档位名称（简短）
+    // 档位名称
+    private func profileDisplayName(_ p: LadderProfile) -> String {
+        switch p {
+        case .p4k: return "超高清"
+        case .ultra: return "超高帧"
+        case .high: return "超清"
+        case .standard: return "高清"
+        case .low: return "超低网"
+        }
+    }
+
+    private func captureExperimentPanel() -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Picker("Range", selection: $rtc.captureRangeMode) {
+                    ForEach(CaptureRangeMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Binning", selection: $rtc.captureBinningMode) {
+                    ForEach(CaptureBinningMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
+            Button("应用采集格式") {
+                rtc.applyCaptureExperimentFormat()
+            }
+            .font(.system(size: 11, weight: .bold))
+            .foregroundColor(.black)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .background(Color.yellow)
+            .cornerRadius(6)
+
+            CaptureColorSliderView(
+                title: "冷暖",
+                value: $rtc.wbTemperature,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "黄/琥珀",
+                value: $rtc.wbAmber,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "绿紫",
+                value: $rtc.wbTint,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "红",
+                value: $rtc.wbRed,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "绿",
+                value: $rtc.wbGreen,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "蓝",
+                value: $rtc.wbBlue,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "黑",
+                value: $rtc.wbBlack,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+            CaptureColorSliderView(
+                title: "白",
+                value: $rtc.wbWhite,
+                remoteSyncToken: rtc.captureColorRemoteTick,
+                onLocalCommit: { rtc.applyCaptureColorAdjustment() }
+            )
+
+            HStack(spacing: 8) {
+                Button("应用颜色") {
+                    rtc.applyCaptureColorAdjustment()
+                }
+                .frame(maxWidth: .infinity, minHeight: 26)
+                .background(Color.white.opacity(0.85))
+                .foregroundColor(.black)
+                .cornerRadius(6)
+
+                Button("重置颜色") {
+                    rtc.resetCaptureColorAdjustment()
+                }
+                .frame(maxWidth: .infinity, minHeight: 26)
+                .background(Color.white.opacity(0.35))
+                .foregroundColor(.white)
+                .cornerRadius(6)
+            }
+            .font(.system(size: 11, weight: .medium))
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.55))
+        .cornerRadius(8)
+    }
+
     var body: some View {
         ZStack {
             // 🔥 底层黑色背景，确保没有白边
             Color.black
                 .ignoresSafeArea(.all)
             
-            // 预览
-            WebRTCPreview(view: rtc.localView)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.25)) { showControls.toggle() }
-                }
-
-            // 左上角"我的"按钮 + 方向状态显示
-            if showControls {
-                VStack {
-                    HStack {
-                        Button(action: {
-                            showingProfile = true
-                        }) {
-                            VStack(spacing: 1) {
-                                Image(systemName: "person.circle.fill")
-                                    .font(.system(size: 16))
-                                Text("我的")
-                                    .font(.system(size: 8))
-                            }
-                            .foregroundColor(.white)
-                            .padding(6)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .padding(.top, 35)
-                        .padding(.leading, 12)
-                        
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .transition(.move(edge: .leading).combined(with: .opacity))
+            // 预览（旋转90度，将横屏画面竖屏显示）
+            GeometryReader { geo in
+                WebRTCPreview(view: rtc.localView)
+                    .frame(width: geo.size.height, height: geo.size.width)
+                    .rotationEffect(.degrees(90))
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+            .ignoresSafeArea()
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.25)) { showControls.toggle() }
             }
 
-            // 底部控制面板（横屏模式 - 水平排列，和最长边平行）
-            if showControls {
-                VStack(spacing: 0) {  // 🔥 spacing: 0 消除可能的白线
+            // PC 连接 + 白平衡状态（左上角，始终显示）
+            VStack {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // ⭐ §53.2：「在线」与「在看」拆成两段，别再用一个灯表达两件事。
+                        //   以前这行只看拉流心跳（PC 只在有画面时才发），PC 登录着但没画面
+                        //   会显示「PC未连接」——把故障现象说成了对方没上线，现场没法判断。
+                        //   现在：绿=在线且在看 / 橙=在线但没出画面（问题在拉流侧）/ 红=真没上线。
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(pcStatusColor)
+                                .frame(width: 7, height: 7)
+                            Text(pcStatusText)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(pcStatusColor)
+                        }
+                        // ⭐ 切网重连中（P2P）：过程可视化，PC 心跳恢复后自动消失
+                        if rtc.p2pReconnecting && !rtc.viewerConnected {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color.yellow)
+                                    .frame(width: 7, height: 7)
+                                Text("网络切换重连中…")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.yellow)
+                            }
+                        }
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(rtc.whiteBalanceIsAuto ? Color.cyan : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text("白平衡:\(rtc.whiteBalanceStatusText)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(rtc.whiteBalanceIsAuto ? .cyan : .orange)
+                        }
+                        // ⭐ §57.3（对齐 PC 的 §56.28b）：编码显示**故意**恒为 H265（障眼，不暴露真实
+                        //   会话编码）。真实编码看日志/内部状态（H265Support.effectiveCodec），面板仅供外人看。
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text("编码:H265")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 5)
+                    .background(Color.black.opacity(0.45))
+                    .cornerRadius(8)
+                    .padding(.top, 52)
+                    .padding(.leading, 10)
                     Spacer()
-                    ControlPanelView(rtc: rtc)
-                        .padding(.bottom, 20)
-                        .background(Color.clear)  // 🔥 确保背景透明
+                }
+                Spacer()
+            }
+
+            // 顶部导航栏
+            if showControls {
+                VStack(spacing: 0) {
+                    // 顶部导航栏背景
+                    HStack {
+                        // 左边 - 关闭按钮
+                        Button(action: {
+                            // 退出推流页前清理资源
+                            // BackgroundAudioManager.shared.stopBackgroundKeepAlive()  // 🔊 审核隐藏
+                            if rtc.isPublishing { print("⚠️ [原因] 点击返回按钮"); rtc.stopPublish() }
+                            WebSocketManager.shared.disconnect()
+                            if !rtc.isCameraSleeping { rtc.sleepCamera() }
+                            appState.navigateBack()
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Color(hex: "1A1A1A"))
+                                .frame(width: 28, height: 28)
+                                .background(Color.clear)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        
+                        Spacer()
+                        
+                        // 中间 - 标题
+                        Text("主页")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Color(hex: "1A1A1A"))
+                        
+                        Spacer()
+                        
+                        // 右边 - 设置 + 我的
+                        HStack(spacing: 12) {
+                            // 设置图标
+                            Button(action: {
+                                showingProfile = true
+                            }) {
+                                Image(systemName: "gearshape")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(Color(hex: "1A1A1A"))
+                                    .frame(width: 28, height: 28)
+                            }
+                            
+                            // 我的
+                            Button(action: {
+                                showingProfile = true
+                            }) {
+                                Text("我的")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(Color(hex: "1A1A1A"))
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(height: 44)
+                    .background(Color(hex: "FAFAFA"))
+                    
+                    Spacer()
+                }
+                .padding(.top, 44) // 状态栏高度
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            
+            // 底部操作面板（镜头变倍 + 清晰度 + 摄像头切换）
+            if showControls {
+                VStack(spacing: 0) {
+                    Spacer()
+                    
+                    VStack(spacing: 10) {
+                        // 🔍 屏幕亮度调节
+                        BrightnessSliderView()
+                            .padding(.horizontal, 16)
+
+                        if showCaptureExperimentPanel {
+                            captureExperimentPanel()
+                                .padding(.horizontal, 16)
+                        }
+
+                        // 档位（可点击切换UI高亮，不发后端）+ 摄像头切换
+                        HStack(spacing: 6) {
+                            // 档位按钮（仅UI切换，不发送后端）
+                            // ⭐ 2026-08-01 用户要求：主页档位「超高清」「超高帧」互换显示位置（名称/等级不变，仅顺序）
+                            ForEach([LadderProfile.low, .standard, .high, .ultra, .p4k], id: \.self) { profile in
+                                Button(action: {
+                                    // 仅切换UI显示，不实际切换档位
+                                    rtc.currentProfile = profile
+                                }) {
+                                    Text(profileDisplayName(profile))
+                                        .font(.system(size: 10, weight: rtc.currentProfile == profile ? .bold : .regular))
+                                        .foregroundColor(rtc.currentProfile == profile ? .yellow : .white)
+                                        .frame(width: 40, height: 30)
+                                        .background(rtc.currentProfile == profile ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
+                                        .cornerRadius(6)
+                                }
+                            }
+                            
+                            // 分隔线
+                            Rectangle()
+                                .fill(Color.white.opacity(0.3))
+                                .frame(width: 1, height: 20)
+                            
+                            // 摄像头切换
+                            Button(action: {
+                                rtc.toggleCamera()
+                            }) {
+                                Text("切换")
+                                    .font(.system(size: 10, weight: .regular))
+                                    .foregroundColor(.white)
+                                    .frame(width: 40, height: 30)
+                                    .background(Color.black.opacity(0.6))
+                                    .cornerRadius(6)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 40)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -377,137 +969,104 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)  // 🔥 确保填满整个屏幕
         .background(Color.black.ignoresSafeArea(.all))     // 🔥 黑色背景忽略所有安全区域
         .ignoresSafeArea(.all)                             // 🔥 ZStack 本身也忽略安全区域
+        .statusBar(hidden: isBlackout)                     // 🔥 黑屏时隐藏状态栏
         .modifier(HideHomeIndicatorModifier())             // 🔥 隐藏 Home Indicator（iOS 16+）
         .onAppear {
-            print("\n========================================")
-            print("🚀🚀🚀 ContentView.onAppear 开始执行")
-            print("========================================")
-            
-            // 📊 诊断：检查初始状态
-            print("📊 初始状态检查：")
-            print("   - scenePhase: \(scenePhase)")
-            print("   - streamKey: \(rtc.streamKey.isEmpty ? "❌空(\(rtc.streamKey.count)字符)" : "✅已设置(\(rtc.streamKey))")")
-            print("   - isPublishing: \(rtc.isPublishing ? "⚠️是" : "✅否")")
-            print("   - isCameraSleeping: \(rtc.isCameraSleeping ? "⚠️是" : "✅否")")
-            print("   - isCameraReady: \(isCameraReady ? "✅是" : "❌否")")
-            print("   - isWebSocketConnected: \(isWebSocketConnected ? "✅是" : "❌否")")
-            print("   - hasAutoPublished: \(hasAutoPublished ? "⚠️是" : "✅否")")
-            
-            // 🔥 关键修复：确保休眠状态为 false（防止残留状态导致不自动推流）
-            if rtc.isCameraSleeping {
-                print("⚠️ 发现休眠状态为 true，强制重置为 false")
-                // 直接唤醒（这会重置 isCameraSleeping = false）
-                rtc.wakeCamera()
+            print("🚀 ContentView.onAppear")
+            rtc.localView.backgroundColor = .black
+            rtc.localView.isOpaque = true
+            rtc.localView.contentMode = .scaleAspectFill
+            if isBlackout {
+                isBlackout = false
             }
-            
-            // 🔥 关键修复：主动清理旧状态，确保干净的初始化
-            if rtc.isPublishing {
-                print("⚠️ 发现推流状态为 true，先停止推流清理状态")
-                rtc.stopPublish()
+            if let b = savedBrightness {
+                UIScreen.main.brightness = b
+                savedBrightness = nil
             }
+
+            // 🔊 审核隐藏 - 后台保活
+            // BackgroundAudioManager.shared.startBackgroundKeepAlive()
             
-            // ✅ 重置自动推流标志（杀死进程后重启需要重新自动推流）
+            // 清理旧状态
+            if rtc.isCameraSleeping { rtc.wakeCamera() }
+            if rtc.isPublishing { print("⚠️ [原因] 重新进入推流页清理旧状态"); rtc.stopPublish() }
+            
+            // 重置状态
             hasAutoPublished = false
             isCameraReady = false
-            autoPublishRetryCount = 0  // 重置重试次数
-            lastShownStageEnded = 0    // 🔥 重置弹框阶段标志，确保每次进入都能弹框
-            print("🔄 已重置 hasAutoPublished=false, isCameraReady=false, autoPublishRetryCount=0, lastShownStageEnded=0")
+            autoPublishRetryCount = 0
+            lastShownStageEnded = 0
             
-            // 🔥 立即检查试用状态 - 如果登录时已经是试用结束，立即弹框引导激活
+            // 检查试用状态
             let trialRequired = UserDefaults.standard.bool(forKey: "trial_required")
             let trialEnded = UserDefaults.standard.bool(forKey: "trial_ended")
             let activated = UserDefaults.standard.bool(forKey: "activated")
-            print("🔍 onAppear 试用状态检查: trialRequired=\(trialRequired), activated=\(activated), trialEnded=\(trialEnded)")
-
-            // 🔥 记录是否试用已结束（用于后续判断是否跳过摄像头启动）
             let isTrialExpired = trialRequired && !activated && trialEnded
             
             if isTrialExpired {
-                print("⏱️ 登录时已试用结束，稍后弹框引导激活")
-                // 断开 WebSocket（如果已连接）
                 WebSocketManager.shared.disconnect()
             }
             
-            // ✅ 主动加载 streamKey（防止杀进程后丢失）
+            // 加载 streamKey
             if let permanentToken = UserDefaults.standard.string(forKey: "permanent_token"), !permanentToken.isEmpty {
                 rtc.updateStreamKey(permanentToken)
-                print("✅ onAppear: 主动加载 streamKey = \(permanentToken)")
-            } else {
-                print("❌ onAppear: 未找到 permanent_token！")
             }
             
-            // 🔥 已改为使用带时间戳的唯一流名，不再需要删除旧流
-            // 每次推流都使用新的流名（基础流名 + 时间戳），避免冲突
-            
-            // ✅ 横屏锁定：强制横屏方向
-            AppDelegate.orientationLock = .landscapeRight
-            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            // 竖屏锁定
+            AppDelegate.orientationLock = .portrait
+            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
-            
-            // 防止屏幕自动锁屏
             UIApplication.shared.isIdleTimerDisabled = true
             
-            print("🎬 ContentView.onAppear: 横屏锁定完成")
-            
-            // 🔥 如果试用已结束，跳过摄像头启动和推流，直接弹框引导激活
+            // 🔥 试用已结束 - 不进入推流，直接弹框提示
             if isTrialExpired {
-                print("⏱️ 试用已结束，跳过摄像头启动，弹框引导激活")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self.lastShownStageEnded = 6
-                    self.trialEndMessage = "今日试用次数已用完"
+                    self.trialEndMessage = "试用已结束，请扫码绑定设备后继续使用"
                     self.isTrialEnded = true
                     self.showTrialEndAlert = true
                 }
-                // 注册通知监听器（用于处理激活后的状态）
-                setupAutoPublishing()
+                // 🔥 不启动摄像头和推流
                 return
             }
+
+            // ⭐ 需求#13：推流前版本检查（软提示，一次会话只弹一次；后台未配置=空串则跳过）
+            let latestIos = UserDefaults.standard.string(forKey: "latest_ios_version") ?? ""
+            let localVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+            if !updatePromptShown && !latestIos.isEmpty && !localVer.isEmpty && latestIos != localVer {
+                updatePromptShown = true
+                updatePromptText = "发现新版本 v\(latestIos)（当前 v\(localVer)），请更新后使用"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.showUpdatePrompt = true
+                }
+            }
+
+            // coco/aihj：§56.11 未读留言回复、§59 登录广告、§60 邀请活动 —— aihj 后端无这些接口，登录后不拉不弹（对齐老 iOS）
             
-            // ✅ 延迟启动摄像头，确保设备已完全旋转到横屏
+            // 延迟启动摄像头
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("🎬 [0.5秒后] 开始初始化摄像头...")
-                rtc.startPreviewIfNeeded()  // ✅ 使用配置的档位
+                rtc.startPreviewIfNeeded()
             }
             
-            // ✅ 事件驱动自动推流：监听摄像头预览和WebSocket连接状态
-            print("🔧 开始注册自动推流事件监听器...")
+            // 注册自动推流监听
             setupAutoPublishing()
             
-            // 🔥 检查 WebSocket 连接状态并主动重连（杀死进程后可能需要重连）
+            // 检查 WebSocket 连接
             if WebSocketManager.shared.isConnected {
-                print("📡 WebSocket 已连接，标记 isWebSocketConnected=true")
                 isWebSocketConnected = true
             } else {
-                print("⚠️ WebSocket 未连接，尝试重连...")
                 isWebSocketConnected = false
-                
-                // 🔥 主动重连 WebSocket
                 if let deviceId = UserDefaults.standard.string(forKey: "device_id"), !deviceId.isEmpty {
-                    print("🔄 正在重连 WebSocket，deviceId=\(deviceId)")
                     WebSocketManager.shared.connect(deviceId: deviceId)
-                } else {
-                    print("❌ 未找到 device_id，无法重连 WebSocket")
                 }
             }
             
-            // ✅ 延迟检查一次（确保初始化时 streamKey 和摄像头都已加载）
-            // 这个延迟检查作为兜底机制，如果事件驱动的推流没有触发，这里会再尝试一次
-            // 延迟 3.5 秒，给事件驱动推流和重试机制足够的时间
+            // 兜底检查
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
-                print("🔍 [3.5秒后] 兜底检查自动推流条件...")
                 if !self.rtc.isPublishing && !self.hasAutoPublished {
-                    print("   -> 事件驱动推流未成功，执行兜底推流")
                     self.tryAutoPublish()
-                } else if self.rtc.isPublishing {
-                    print("   -> ✅ 已在推流中，无需兜底")
-                } else {
-                    print("   -> 已尝试过自动推流，无需重复")
                 }
             }
-            
-            print("========================================")
-            print("✅ ContentView.onAppear 执行完毕")
-            print("========================================\n")
             
             // 监听退出登录通知
             NotificationCenter.default.addObserver(
@@ -515,61 +1074,67 @@ struct ContentView: View {
                 object: nil,
                 queue: .main
             ) { _ in
-                print("⏹️ 收到退出登录通知，停止推流")
-                if rtc.isPublishing {
-                    rtc.stopPublish()
-                }
+                // BackgroundAudioManager.shared.stopBackgroundKeepAlive()  // 🔊 审核隐藏
+                if rtc.isPublishing { print("⚠️ [原因] 退出登录停止推流"); rtc.stopPublish() }
             }
             
-            // 🔥 监听扫码前释放摄像头通知（触发睡眠，完全释放摄像头资源）
+            // ⭐ §53.4-定稿：§52.6 的「非同 WiFi → 退回登录页让用户改线路」已废弃。
+            //   线路现在由系统在推流前按网络关系自动决定（SessionPolicy），跨网直接走多人线路，
+            //   不需要用户做任何事。这个通知已无人发送，保留空观察者仅为回滚方便。
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("P2PNotSameWifi"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                print("ℹ️ [线路] 收到已废弃的 P2PNotSameWifi 通知（§53.4 改为自动重新协商），忽略")
+            }
+            
+            // 监听扫码前释放摄像头通知
             NotificationCenter.default.addObserver(
                 forName: NSNotification.Name("ReleaseCameraForScanner"),
                 object: nil,
                 queue: .main
             ) { _ in
-                print("📷 收到扫码释放摄像头通知，触发睡眠")
-                if !rtc.isCameraSleeping {
-                    rtc.sleepCamera()
-                }
+                if !rtc.isCameraSleeping { rtc.sleepCamera() }
             }
             
-            // ✅ 启动音量键监听
+            // 启动音量键监听
             volumeButtonManager.startMonitoring { [weak rtc] in
                 guard let rtc = rtc else { return }
                 DispatchQueue.main.async {
-                    // 🔥 防抖：如果正在执行休眠/唤醒操作，忽略新的请求
-                    if self.isSleepWakeInProgress {
-                        print("🔊 音量键：操作进行中，忽略")
-                        return
-                    }
-                    
+                    if self.isSleepWakeInProgress { return }
                     self.isSleepWakeInProgress = true
                     
                     if rtc.isCameraSleeping {
-                        print("🔊 音量键：唤醒摄像头")
                         rtc.wakeCamera()
                     } else {
-                        print("🔊 音量键：休眠摄像头")
                         rtc.sleepCamera()
                     }
                     
-                    // 🔥 0.5秒后解除防抖锁定
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self.isSleepWakeInProgress = false
                     }
                 }
             }
+
+            rtc.startWhiteBalanceStatusPolling()
         }
         .onDisappear {
-            // ✅ 离开推流页：恢复所有方向 + 回到竖屏
+            print("🚪 ContentView.onDisappear: 清理资源")
+            rtc.stopWhiteBalanceStatusPolling()
+            
+            // 兜底资源清理
+            if rtc.isPublishing { print("⚠️ [原因] onDisappear兜底清理"); rtc.stopPublish() }
+            if WebSocketManager.shared.isConnected { WebSocketManager.shared.disconnect() }
+            if !rtc.isCameraSleeping { rtc.sleepCamera() }
+            
+            // 恢复方向
             AppDelegate.orientationLock = .all
             UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
-            
-            // 恢复自动锁屏
             UIApplication.shared.isIdleTimerDisabled = false
 
-            // 移除所有通知观察者
+            // 移除通知观察者
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("StopPublishBeforeLogout"), object: nil)
             NotificationCenter.default.removeObserver(self, name: NSNotification.Name("ReleaseCameraForScanner"), object: nil)
             NotificationCenter.default.removeObserver(self, name: .cameraPreviewReady, object: nil)
@@ -577,46 +1142,59 @@ struct ContentView: View {
             NotificationCenter.default.removeObserver(self, name: .webSocketConnectionStateChanged, object: nil)
             NotificationCenter.default.removeObserver(self, name: .resetPublishRequested, object: nil)
             NotificationCenter.default.removeObserver(self, name: .cameraSleepRequested, object: nil)
-            NotificationCenter.default.removeObserver(self, name: .tryDisconnectRequested, object: nil)  // 🔥 试用断开
+            NotificationCenter.default.removeObserver(self, name: .tryDisconnectRequested, object: nil)
             
-            // ✅ 停止音量键监听
             volumeButtonManager.stopMonitoring()
         }
         .simultaneousGesture(
-            // 🔥 滑动5次切换黑屏/亮屏
+            // 🔥 同一方向滑动5次切换黑屏/亮屏
             DragGesture(minimumDistance: 50)
-                .onEnded { _ in
+                .onEnded { value in
                     let now = Date()
-                    // 如果距离上次滑动超过2秒，重置计数
-                    if now.timeIntervalSince(lastSwipeTime) > 2.0 {
+                    
+                    // 判断滑动方向
+                    let horizontal = value.translation.width
+                    let vertical = value.translation.height
+                    let direction: String
+                    if abs(horizontal) > abs(vertical) {
+                        direction = horizontal > 0 ? "right" : "left"
+                    } else {
+                        direction = vertical > 0 ? "down" : "up"
+                    }
+                    
+                    // 超过2秒 或 方向不同 → 重置计数
+                    if now.timeIntervalSince(lastSwipeTime) > 2.0 || direction != lastSwipeDirection {
                         swipeCount = 0
                     }
+                    
                     lastSwipeTime = now
+                    lastSwipeDirection = direction
                     swipeCount += 1
                     
-                    // 达到5次滑动，切换黑屏状态
-                    if swipeCount >= 5 {
+                    // 🔥 熄屏5次，亮屏20次（防止误触亮屏）
+                    let threshold = isBlackout ? 20 : 5
+                    if swipeCount >= threshold {
                         swipeCount = 0
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isBlackout.toggle()
-                    if isBlackout { showControls = false }
-                }
-                if isBlackout {
-                    savedBrightness = UIScreen.main.brightness
-                    UIScreen.main.brightness = 0.05
-                } else if let b = savedBrightness {
-                    UIScreen.main.brightness = b
-                    savedBrightness = nil
+                        lastSwipeDirection = ""
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isBlackout.toggle()
+                            if isBlackout { showControls = false }
                         }
+                        if isBlackout {
+                            savedBrightness = UIScreen.main.brightness
+                            UIScreen.main.brightness = 0.05
+                        } else if let b = savedBrightness {
+                            UIScreen.main.brightness = b
+                            savedBrightness = nil
+                        }
+                    }
                 }
-            }
         )
         .fullScreenCover(isPresented: $showingProfile, onDismiss: {
-            // ✅ 从个人中心返回推流页，恢复横屏锁定
-            AppDelegate.orientationLock = .landscapeRight
-            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            // 从个人中心返回推流页，恢复竖屏锁定
+            AppDelegate.orientationLock = .portrait
+            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
-            print("ℹ️ 从个人中心返回到推流页面，恢复横屏锁定")
         }) {
             ProfileView()
                 .environmentObject(appState)
@@ -627,34 +1205,50 @@ struct ContentView: View {
                     UIViewController.attemptRotationToDeviceOrientation()
                 }
         }
-        // 🔥 试用结束 - 直接退出应用
-        .onChange(of: showTrialEndAlert) { newValue in
+        // 🔥 试用结束 - 停止推流，弹框提示（不退出应用）
+        .onChange(of: showTrialEndAlert, perform: { newValue in
             if newValue {
-                print("⏱️ 试用结束，直接退出应用")
-                // 停止推流
-                if rtc.isPublishing {
-                    rtc.stopPublish()
-                }
-                // 断开 WebSocket
+                // 停止推流和断开WebSocket
+                if rtc.isPublishing { print("⚠️ [原因] 绑定成功弹窗显示"); rtc.stopPublish() }
                 WebSocketManager.shared.disconnect()
-                // 延迟一点退出，确保清理完成
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    exit(0)
-                }
+
+                // 🔥 不再退出应用，只是弹框提示
+                // 用户可以选择激活或返回
             }
+        })
+        // 🔥 试用结束弹框
+        .alert("试用已结束", isPresented: $showTrialEndAlert) {
+            Button("去扫码绑定") {
+                showTrialEndAlert = false
+                // 跳转到扫码绑定页面
+                appState.navigateToQRScanner()
+            }
+            Button("取消", role: .cancel) {
+                showTrialEndAlert = false
+                // ⭐ 跳到登录页让用户重新登录 (清 token 防止旧账号 auto-skip)
+                UserDefaults.standard.set("", forKey: "jwt_token")
+                UserDefaults.standard.set("", forKey: "permanent_token")
+                appState.navigateToMonitorLogin()
+            }
+        } message: {
+            Text(trialEndMessage.isEmpty ? "试用已结束，请扫码绑定设备后继续使用" : trialEndMessage)
         }
-        // 🔥 激活页面
+        // ⭐ 需求#13：版本更新软提示（不拦截推流，知道了即关）
+        .alert("发现新版本", isPresented: $showUpdatePrompt) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(updatePromptText)
+        }
+        // coco/aihj：留言未读回复/登录广告/邀请活动弹层已移除（aihj 后端无对应接口，对齐老 iOS）
+        // 激活页面
         .sheet(isPresented: $showingActivation, onDismiss: {
-            // 🔥 关闭激活页面后，恢复横屏锁定
-            print("📱 激活页面关闭，恢复横屏锁定")
-            AppDelegate.orientationLock = .landscapeRight
-            UIDevice.current.setValue(UIInterfaceOrientation.landscapeRight.rawValue, forKey: "orientation")
+            AppDelegate.orientationLock = .portrait
+            UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
         }) {
             ActivationView(onActivationSuccess: {
-                // 🔥 激活成功后，返回登录界面重新登录
                 print("✅ 激活成功，返回登录界面")
-                lastShownStageEnded = 0  // 重置弹框阶段标志
+                lastShownStageEnded = 0
                 hasAutoPublished = false
                 
                 // 推流已经停止了，WebSocket也已经断开了
@@ -672,79 +1266,54 @@ struct ContentView: View {
             })
         }
         // ✅ 监听 App 生命周期（iOS 15+ 兼容写法）
-        .onChange(of: scenePhase) { newPhase in
+        .onChange(of: scenePhase, perform: { newPhase in
             handleScenePhaseChange(to: newPhase)
-        }
+        })
     }
     
     // MARK: - 事件驱动自动推流
     private func setupAutoPublishing() {
-        print("🔧 setupAutoPublishing: 开始注册通知观察者...")
-        
         // 监听摄像头预览就绪
         NotificationCenter.default.addObserver(
             forName: .cameraPreviewReady,
             object: nil,
             queue: .main
         ) { _ in
-            print("\n📸📸📸 收到摄像头预览就绪通知")
             self.isCameraReady = true
-            print("   -> 已设置 isCameraReady=true")
-            // 🔥 延迟0.5秒后再尝试推流，确保 localVideoTrack 真正创建完成
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                print("   -> [0.5秒后] 尝试自动推流...")
                 self.tryAutoPublish()
             }
         }
-        print("   ✅ 已注册 cameraPreviewReady 监听器")
         
-        // 🔥 监听推流失败通知
+        // 监听推流失败通知
         NotificationCenter.default.addObserver(
             forName: .publishFailed,
             object: nil,
             queue: .main
         ) { notification in
-            // 🔥 解除防抖锁，允许重试
             self.isAutoPublishInProgress = false
             
             if let reason = notification.userInfo?["reason"] as? String {
-                print("\n❌❌❌ 收到推流失败通知：\(reason)")
-                print("   -> 当前重试次数：\(self.autoPublishRetryCount)")
+                print("❌ 推流失败: \(reason)")
                 
-                // 🔥 重试机制：只重试1次（code=400时足够）
                 if self.autoPublishRetryCount < 1 {
                     self.autoPublishRetryCount += 1
-                    
-                    // 🔥 SRS 会自动清理旧流，无需手动删除
-                    // 每次推流都用新的 streamKey（带时间戳），不会冲突
-                    
-                    // 延迟2秒重试（给SRS清理时间）
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        print("\n🔄🔄🔄 [第\(self.autoPublishRetryCount)次重试] 2秒后，开始重试推流...")
-                        
-                        // 🔥 先清理旧状态，确保干净
                         if self.rtc.isPublishing {
-                            print("⚠️ 重试前发现推流状态为 true，先清理")
+                            print("⚠️ [原因] 自动推流失败重试")
                             self.rtc.stopPublish()
-                            // 等待0.5秒让清理完成
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                                 self.hasAutoPublished = false
                                 self.rtc.startPublish()
                             }
                         } else {
-                            // 重置 hasAutoPublished，允许再次推流
                             self.hasAutoPublished = false
-                            // 再次尝试推流（会生成新的 streamKey）
                             self.rtc.startPublish()
                         }
                     }
-                } else {
-                    // 重试次数用尽
-                    print("   -> ❌ 已重试1次，放弃自动推流")
                 }
             }
         }
-        print("   ✅ 已注册 publishFailed 监听器")
         
         // 监听WebSocket连接状态
         NotificationCenter.default.addObserver(
@@ -755,103 +1324,68 @@ struct ContentView: View {
             if let userInfo = notification.userInfo,
                let stateRaw = userInfo["connectionState"] as? String,
                stateRaw == "connected" {
-                print("\n🌐🌐🌐 收到WebSocket连接成功通知")
                 self.isWebSocketConnected = true
-                print("   -> 已设置 isWebSocketConnected=true")
                 self.tryAutoPublish()
             } else {
-                print("\n⚠️ 收到WebSocket断开通知")
                 self.isWebSocketConnected = false
-                print("   -> 已设置 isWebSocketConnected=false")
             }
         }
-        print("   ✅ 已注册 webSocketConnectionStateChanged 监听器")
         
-        // 🔥 监听重置推流请求（从后端服务器发来的RESET_PUBLISH消息）
+        // 监听重置推流请求
         NotificationCenter.default.addObserver(
             forName: .resetPublishRequested,
             object: nil,
             queue: .main
-        ) { notification in
-            print("\n🔄🔄🔄 收到重置推流请求通知")
-            
-            let deviceId = notification.userInfo?["deviceId"] as? String ?? ""
-            let timestamp = notification.userInfo?["timestamp"] as? Int64 ?? 0
-            
-            print("   - deviceId: \(deviceId)")
-            print("   - timestamp: \(timestamp)")
-            print("   - 当前推流状态: \(self.rtc.isPublishing ? "正在推流" : "未推流")")
-            
+        ) { _ in
+            print("🔄 收到重置推流请求")
             if self.rtc.isPublishing {
-                // 正在推流：先停止，再重新推流
-                print("   -> 正在推流中，先停止推流...")
+                print("⚠️ [原因] 服务器下发重置推流")
                 self.rtc.stopPublish()
-                
-                // 等待0.5秒确保完全停止后再重新推流
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    print("   -> 重新开始推流...")
                     self.rtc.startPublish()
                 }
             } else {
-                // 未推流：直接开始推流
-                print("   -> 当前未推流，直接开始推流...")
                 self.rtc.startPublish()
             }
         }
-        print("   ✅ 已注册 resetPublishRequested 监听器")
         
-        // 🔥 监听省电模式（摄像头休眠/唤醒）请求（从后端服务器发来的RESET_SHENGDIANG消息）
+        // 监听睡眠/唤醒请求
         NotificationCenter.default.addObserver(
             forName: .cameraSleepRequested,
             object: nil,
             queue: .main
         ) { notification in
-            print("\n💤💤💤 收到省电模式请求通知")
+            let action = notification.userInfo?["action"] as? String ?? ""
             
-            let deviceId = notification.userInfo?["deviceId"] as? String ?? ""
-            let timestamp = notification.userInfo?["timestamp"] as? Int64 ?? 0
-            let reason = notification.userInfo?["reason"] as? String ?? ""
-            
-            print("   - deviceId: \(deviceId)")
-            print("   - timestamp: \(timestamp)")
-            print("   - reason: \(reason)")
-            print("   - 当前休眠状态: \(self.rtc.isCameraSleeping ? "休眠中" : "运行中")")
-            
-            // 根据当前状态切换到相反状态（不显示Toast）
-            if self.rtc.isCameraSleeping {
-                print("   -> 当前休眠中，执行唤醒操作...")
-                
-                // 🔥 唤醒前检查试用状态
+            if action == "sleep" {
+                if !self.rtc.isCameraSleeping {
+                    print("💤 收到休眠指令")
+                    self.rtc.sleepCamera()
+                }
+            } else if action == "wake" {
                 let trialRequired = UserDefaults.standard.bool(forKey: "trial_required")
                 let trialEnded = UserDefaults.standard.bool(forKey: "trial_ended")
                 let activated = UserDefaults.standard.bool(forKey: "activated")
-
+                
                 if trialRequired && !activated && trialEnded {
-                    print("   ⏱️ 试用已结束，无法唤醒推流")
-
-                    // 断开 WebSocket
                     WebSocketManager.shared.disconnect()
-
-                    // 防止重复弹框
                     if self.lastShownStageEnded < 6 {
                         self.lastShownStageEnded = 6
-                        self.trialEndMessage = "今日试用次数已用完"
+                        self.trialEndMessage = "试用已结束，请扫码绑定设备后继续使用"
                         self.isTrialEnded = true
                         self.showTrialEndAlert = true
-                        print("   -> 弹框引导激活")
                     }
                     return
                 }
                 
+                if self.rtc.isCameraSleeping {
+                    print("☀️ 收到唤醒指令")
                 self.rtc.wakeCamera()
-            } else {
-                print("   -> 当前运行中，执行休眠操作...")
-                self.rtc.sleepCamera()
             }
         }
-        print("   ✅ 已注册 cameraSleepRequested 监听器")
+        }
         
-        // 🔥 监听试用断开请求（从后端服务器发来的TryDisconnect消息，每秒都会收到）
+        // 监听试用断开请求
         NotificationCenter.default.addObserver(
             forName: .tryDisconnectRequested,
             object: nil,
@@ -861,87 +1395,47 @@ struct ContentView: View {
             let trialEnded = notification.userInfo?["trialEnded"] as? Bool ?? false
             let stageJustEnded = notification.userInfo?["stageJustEnded"] as? Int ?? 0
             let message = notification.userInfo?["message"] as? String ?? "试用时间已到"
-
-            // 只在需要断开时处理
+            
             if shouldDisconnect {
-                print("\n⏱️⏱️⏱️ 收到试用断开请求通知 - 需要断开")
-                print("   - shouldDisconnect: \(shouldDisconnect)")
-                print("   - trialEnded: \(trialEnded)")
-                print("   - stageJustEnded: \(stageJustEnded)")
-                print("   - lastShownStageEnded: \(self.lastShownStageEnded)")
-                print("   - message: \(message)")
-
-                // 🔥 停止推流
-                if self.rtc.isPublishing {
-                    print("   -> 停止推流...")
-                    self.rtc.stopPublish()
-                }
-
-                // 🔥 断开 WebSocket
-                print("   -> 断开 WebSocket...")
+                if self.rtc.isPublishing { print("⚠️ [原因] 网络类型切换断开"); self.rtc.stopPublish() }
                 WebSocketManager.shared.disconnect()
-
-                // 🔥 防止重复弹框：只有当新阶段结束时才弹框
-                let shouldShowAlert = (stageJustEnded > 0 && stageJustEnded > self.lastShownStageEnded) ||
+                
+                let shouldShowAlert = (stageJustEnded > 0 && stageJustEnded > self.lastShownStageEnded) || 
                                       (trialEnded && self.lastShownStageEnded < 6)
-
+                
                 if shouldShowAlert {
                     self.lastShownStageEnded = stageJustEnded > 0 ? stageJustEnded : 6
-                    self.trialEndMessage = message
+                    self.trialEndMessage = message.isEmpty ? "试用已结束，请扫码绑定设备后继续使用" : message
                     self.isTrialEnded = trialEnded
                     self.showTrialEndAlert = true
-                    print("   -> 显示引导激活弹框 (阶段 \(self.lastShownStageEnded))")
-                } else {
-                    print("   -> 已弹框过阶段 \(self.lastShownStageEnded)，跳过")
+                    print("⏱️ 试用结束，弹框引导扫码绑定")
                 }
             }
         }
-        print("   ✅ 已注册 tryDisconnectRequested 监听器")
-        
-        print("🔧 setupAutoPublishing: 通知观察者注册完成\n")
     }
     
     private func tryAutoPublish() {
-        // 🔥 检查试用状态 - 如果需要试用限制且试用已结束，则弹框引导激活
+        // 检查试用状态
         let trialRequired = UserDefaults.standard.bool(forKey: "trial_required")
         let trialEnded = UserDefaults.standard.bool(forKey: "trial_ended")
         let activated = UserDefaults.standard.bool(forKey: "activated")
-
+        
         if trialRequired && !activated && trialEnded {
-            print("⏱️ 试用已结束，无法推流")
-
-            // 断开 WebSocket
             WebSocketManager.shared.disconnect()
-
-            // 防止重复弹框
             if lastShownStageEnded < 6 {
                 lastShownStageEnded = 6
-                trialEndMessage = "今日试用次数已用完"
+                trialEndMessage = "试用已结束，请扫码绑定设备后继续使用"
                 isTrialEnded = true
                 showTrialEndAlert = true
-                print("   -> 弹框引导激活")
             }
             return
         }
         
-        // 🔥 如果摄像头处于休眠状态，不执行自动推流
-        if rtc.isCameraSleeping {
-            print("💤 摄像头处于休眠状态，跳过自动推流")
-            return
-        }
+        // 如果摄像头处于休眠状态，跳过
+        if rtc.isCameraSleeping { return }
         
-        // 🔥 防抖：如果正在执行自动推流，忽略重复调用（防止SRS返回400错误）
-        if isAutoPublishInProgress {
-            print("🔒 自动推流正在进行中，忽略重复调用")
-            return
-        }
-        
-        print("🔍 检查自动推流条件...")
-        print("   - baseStreamKey: \(rtc.baseStreamKey.isEmpty ? "❌空" : "✅已设置(\(rtc.baseStreamKey))")")
-        print("   - 摄像头: \(isCameraReady ? "✅就绪" : "❌未就绪")")
-        print("   - WebSocket: \(isWebSocketConnected ? "✅已连接" : "❌未连接")")
-        print("   - 推流中: \(rtc.isPublishing ? "⚠️是" : "✅否")")
-        print("   - 已自动推流: \(hasAutoPublished ? "⚠️是" : "✅否")")
+        // 防抖
+        if isAutoPublishInProgress { return }
         
         // ✅ 检查 baseStreamKey 是否准备好（streamKey 会在 startPublish 时动态生成）
         guard !rtc.baseStreamKey.isEmpty else {
@@ -958,52 +1452,24 @@ struct ContentView: View {
               isWebSocketConnected,
               !rtc.isPublishing,
               !hasAutoPublished else {
-            print("⏳ 条件未满足，等待...")
-            
-            if rtc.isPublishing {
-                print("   -> 已经在推流中，无需再次推流")
-            } else if hasAutoPublished {
-                print("   -> 已自动推流过（或正在重试中），忽略此次调用")
-            }
             return
         }
         
-        // 🔥 设置防抖锁，防止重复调用startPublish导致SRS 400错误
         isAutoPublishInProgress = true
-        
-        print("✅✅✅ 所有条件满足，准备自动推流！")
-        
-        // 🔥 如果这是首次尝试（不是重试），重置重试计数器
-        // 重试时的 startPublish 调用不会走到这里，所以不会重置计数器
-        if autoPublishRetryCount == 0 {
-            print("   -> 这是首次自动推流尝试")
-        } else {
-            print("   -> 这是第\(autoPublishRetryCount)次重试")
-        }
-        
-        // 🔥 先不设置 hasAutoPublished，等推流真正开始后再设置
-        // 如果 startPublish 立即失败（capturer 或 localVideoTrack 为 nil），会触发 publishFailed 通知
+        print("✅ 开始自动推流")
         rtc.startPublish()
         
-        // 🔥 延迟 1.0 秒后检查推流是否成功启动（给 setRemoteDescription 足够时间）
+        // 延迟检查推流状态
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            print("🔍 [1.0秒后] 检查推流状态：isPublishing = \(self.rtc.isPublishing)")
             if self.rtc.isPublishing {
-                // 推流成功启动，设置标志防止重复推流
                 self.hasAutoPublished = true
-                self.isAutoPublishInProgress = false  // 🔥 解除防抖锁
-                print("✅ 推流已成功启动，设置 hasAutoPublished=true")
+                self.isAutoPublishInProgress = false
+                print("✅ 推流成功")
             } else {
-                // 推流未启动，可能失败了
-                print("⚠️ 推流未能启动（isPublishing=false），可能失败或还在处理中")
-                // 再等 0.5 秒检查一次
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.isAutoPublishInProgress = false  // 🔥 解除防抖锁
+                    self.isAutoPublishInProgress = false
                     if self.rtc.isPublishing {
                         self.hasAutoPublished = true
-                        print("✅ [延迟检查] 推流已成功启动")
-                    } else {
-                        print("❌ [延迟检查] 推流确实失败了")
                     }
                 }
             }
@@ -1012,111 +1478,111 @@ struct ContentView: View {
     
     // MARK: - App 生命周期处理
     private func handleScenePhaseChange(to newPhase: ScenePhase) {
-        print("\n========================================")
-        print("🔄 ScenePhase 变化: \(newPhase)")
-        print("========================================")
-        
         switch newPhase {
         case .background:
-            print("🌙 App 进入后台，清理资源...")
             handleAppEnterBackground()
-            
         case .inactive:
-            print("⏸️ App 进入非活跃状态（可能是通知栏下拉、接电话等）")
-            // 可选：暂停推流（如接电话、通知栏下拉等）
-            
+            break
         case .active:
-            print("☀️ App 回到前台（或首次启动），恢复资源...")
             handleAppBecomeActive()
-            
         @unknown default:
-            print("⚠️ 未知的 ScenePhase 状态")
             break
         }
-        print("========================================\n")
     }
     
     private func handleAppEnterBackground() {
-        // ✅ 如果摄像头在休眠状态，不需要额外处理（已经停止采集）
-        if rtc.isCameraSleeping {
-            print("💤 摄像头已休眠，进入后台无需额外处理")
-            return
-        }
-        
-        // 1. 停止推流
-        if rtc.isPublishing {
-            print("⏹️ 停止推流...")
-            rtc.stopPublish()
-        }
-        
-        // 2. 停止摄像头预览（释放摄像头资源）
-        print("📸 暂停摄像头...")
-        // WebRTC 会自动管理，但标记状态
-        isCameraReady = false
-        
-        // 3. WebSocket 保持连接（可选：如果想省电可以断开）
-        // WebSocketManager.shared.disconnect()
+        if rtc.isCameraSleeping { return }
+        print("🔊 [保活] App进入后台，保持推流 (isPublishing=\(rtc.isPublishing))")
     }
     
     private func handleAppBecomeActive() {
-        print("☀️ handleAppBecomeActive: 开始处理...")
-        
-        // ✅ 如果摄像头在休眠状态，不自动恢复推流（不显示Toast）
-        if rtc.isCameraSleeping {
-            print("💤 摄像头处于休眠状态，保持休眠不自动恢复")
-            return
-        }
-        
-        // 重置状态
+        if rtc.isCameraSleeping { return }
+        rtc.localView.backgroundColor = .black
+        rtc.localView.isOpaque = true
+        rtc.localView.contentMode = .scaleAspectFill
+
         hasAutoPublished = false
-        autoPublishRetryCount = 0  // 重置重试次数
-        print("   🔄 已重置 hasAutoPublished=false, autoPublishRetryCount=0")
+        autoPublishRetryCount = 0
         
-        // 0. 重新加载 streamKey（防止 token 过期或变化）
         if let permanentToken = UserDefaults.standard.string(forKey: "permanent_token"), !permanentToken.isEmpty {
             rtc.updateStreamKey(permanentToken)
-            print("   ✅ 回到前台，重新加载 streamKey = \(permanentToken)")
-        } else {
-            print("   ❌ 回到前台，未找到 permanent_token")
         }
         
-        // 1. 检查 WebSocket 连接状态
         if !WebSocketManager.shared.isConnected {
-            print("   🔄 WebSocket 未连接，尝试重连...")
             if let deviceId = UserDefaults.standard.string(forKey: "device_id") {
                 WebSocketManager.shared.connect(deviceId: deviceId)
                 isWebSocketConnected = false
-                print("   -> 标记 isWebSocketConnected=false，等待连接通知")
-            } else {
-                print("   ❌ 未找到 device_id，无法重连 WebSocket")
             }
         } else {
-            print("   ✅ WebSocket 已连接")
             isWebSocketConnected = true
-            print("   -> 标记 isWebSocketConnected=true")
         }
         
-        // 2. 检查摄像头状态
-        // 如果摄像头已初始化，重新启动采集
         if rtc.capturer != nil {
-            print("   📸 摄像头已初始化，0.5秒后重新启动采集...")
-            // 重新触发采集（recapture 会重新初始化摄像头）
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                if let preset = rtc.currentLadder[rtc.currentProfile] {
-                    print("   📸 [0.5秒后] 重新采集: \(preset.width)x\(preset.height) @\(preset.fps)fps")
-                    rtc.recapture(width: preset.width, height: preset.height, fps: preset.fps)
-                } else {
-                    print("   ⚠️ [0.5秒后] 未找到当前档位配置，无法重新采集")
-                }
+                rtc.reapplyConfigForWake()
             }
         } else {
-            print("   ⚠️ 摄像头未初始化（capturer=nil），需要重新启动预览")
             isCameraReady = false
         }
-        
-        // 3. 等待事件通知自动推流（通过 tryAutoPublish）
-        print("   ⏳ 等待条件满足后自动推流...")
-        print("☀️ handleAppBecomeActive: 处理完毕\n")
+
+        // ⭐ §53.13：回前台后做一次推流健康检查。
+        //   后台期间相机被系统收走、socket 死、ICE 断，但 isPublishing 还是 true →
+        //   tryAutoPublish 的 `!isPublishing` 不成立不会重推，PC 那边也早就放弃重发 REQUEST，
+        //   于是**谁都不再发起恢复，PC 上永远停在最后一帧**。这一步是唯一的恢复出口。
+        //   延迟 1.2s：等 WS 重连与相机中断恢复先跑一拍，避免在半就绪状态上误判。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            rtc.publishHealthCheck("回前台")
+        }
+    }
+}
+
+// MARK: - 采集颜色滑块（PC 下发同步显示；本地拖动不回传 PC）
+struct CaptureColorSliderView: View {
+    let title: String
+    @Binding var value: Float
+    let remoteSyncToken: UInt
+    let onLocalCommit: () -> Void
+
+    @State private var localValue: Float = 0
+    @State private var isDragging = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 40, alignment: .leading)
+            Slider(
+                value: $localValue,
+                in: -1...1,
+                step: 0.05,
+                onEditingChanged: { editing in
+                    isDragging = editing
+                    if !editing {
+                        value = localValue
+                        onLocalCommit()
+                    }
+                }
+            )
+            .accentColor(.white)
+            Text(String(format: "%.2f", localValue))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.white)
+                .frame(width: 38)
+        }
+        .onAppear {
+            localValue = value
+        }
+        .onChange(of: value) { newValue in
+            if !isDragging {
+                localValue = newValue
+            }
+        }
+        .onChange(of: remoteSyncToken) { _ in
+            if !isDragging {
+                localValue = value
+            }
+        }
     }
 }
 

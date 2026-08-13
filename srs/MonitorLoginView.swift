@@ -1,12 +1,51 @@
 import SwiftUI
 
+// ⭐ §53.4-定稿（2026-07-28）：**登录页不再让用户选线路，也不再选编码**。
+//   线路由系统在推流前按网络关系自动决定（同 WiFi → P2P 单人直连；否则 → SRS 多人线路），
+//   编码由总后台配置（默认 H265，观看端内核或本机硬编不支持时自动回退 H264）——
+//   决策逻辑全部在 `Managers/SessionPolicy.swift`。
+//   **SRT 已退役**：SRS 6.0.184 的 RTMP→RTC 桥写死丢弃 HEVC（§49.6-9），SRT+H265 必黑屏。
+//
+//   本枚举保留（rawValue 仍写进 `connect_mode`，供后端强制 SRS 与回滚用），
+//   但 `.srt` 不再出现在任何 UI/决策里，`allCases` 也不再被登录页使用。
+enum ConnectModeOption: String, CaseIterable {
+    case srs = "srs"
+    case p2p = "p2p"
+
+    var title: String {
+        switch self {
+        // ⭐ 2026-07-11：SRS=多人线路、P2P=单人线路（仅改显示名，rawValue 仍是 srs/p2p）
+        case .srs: return "多人线路"
+        case .p2p: return "单人线路"
+        }
+    }
+
+    var isEnabled: Bool { true }
+
+    /// 本地记忆 key（现仅由系统写入决策结果，用户不再手选）
+    static let storageKey = "selected_connect_mode"
+
+    /// 读取上次选择（无则默认 SRS，与后端默认一致）
+    static var lastSelected: ConnectModeOption {
+        let raw = UserDefaults.standard.string(forKey: storageKey) ?? ""
+        return ConnectModeOption(rawValue: raw) ?? .srs
+    }
+}
+
 // 监控端登录视图
 struct MonitorLoginView: View {
-    @EnvironmentObject var appState: AppState  // 添加这一行
+    @EnvironmentObject var appState: AppState
     
-    @State private var username: String = ""
+    @State private var username: String = ""           // 显示用（有本地账号时显示前8位）
+    @State private var fullUsername: String = ""       // 完整账号（用于登录）
     @State private var password: String = ""
     @State private var isPasswordVisible: Bool = false
+    @State private var rememberPassword: Bool = true   // coco/aihj：老版无「记住密码」开关，登录成功一律保存账号（对齐老 iOS）
+    // ⭐ §53.4-定稿：下面三个选择态**已不再驱动任何 UI**（线路/编码改为系统决策）。
+    //   仅与保留下来的 `connectModeChip` / `CodecOptionChips` 一起留着，便于一键回滚到"用户手选"。
+    @State private var selectedConnectMode: ConnectModeOption = ConnectModeOption.lastSelected
+    @State private var selectedCodec: VideoCodecOption = VideoCodecOption.lastSelected
+    @State private var selectedCodecSrs: VideoCodecOption = VideoCodecOption.lastSelected(key: VideoCodecOption.srsStorageKey, defaultCodec: .h265)
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
     @State private var showRegisterView: Bool = false
@@ -14,28 +53,32 @@ struct MonitorLoginView: View {
     
     @State private var isLoading: Bool = false
     @State private var isLoggedIn: Bool = false
-    @State private var loginStep: LoginStep = .idle  // 新增：登录步骤状态
+    @State private var loginStep: LoginStep = .idle
+    @State private var boundControlCount: Int = 1  // 🔥 绑定的控制端数量
     
     @State private var showUserAgreement = false
     @State private var showPrivacyPolicy = false
+    @State private var showAlreadyBoundAlert = false  // 已绑定账号提示
+    @State private var showDeviceIdPage = false       // 🔥 设备ID查看页面
+    // ⭐ 强制更新（总后台「App更新配置」下发最低版本+下载地址，本地版本低则弹不可绕过弹窗）
+    @State private var showForceUpdate = false
+    @State private var forceUpdateMessage = ""
+    @State private var forceUpdateUrl = ""
         
-    // 新增：登录步骤枚举
     enum LoginStep {
         case idle
-        case authenticating    // 正在验证账号密码
-        case connecting        // 正在连接WebSocket
-        case success           // 登录成功
-        case failed            // 登录失败
+        case authenticating
+        case connecting
+        case success
+        case failed
     }
     
-    // 添加环境变量用于导航控制
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景图预留位置 - UI还没切
-                // TODO: 替换为实际背景图
+                // coco/aihj：恢复老幻境2登录页视觉（淡蓝渐变→白），逻辑全部沿用新版
                 LinearGradient(
                     gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
                     startPoint: .topLeading,
@@ -44,11 +87,9 @@ struct MonitorLoginView: View {
                 .ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // 顶部关闭按钮
+                    // 顶部关闭按钮（老样式）
                     HStack {
                         Button(action: {
-                            // TODO: 返回首页或关闭登录界面
-                            //dismiss()
                             appState.navigateBack()
                         }) {
                             Image(systemName: "xmark")
@@ -66,7 +107,7 @@ struct MonitorLoginView: View {
                     
                     Spacer()
                     
-                    // 登录表单
+                    // 登录表单（老样式：带标签的灰底输入框）
                     VStack(spacing: 20) {
                         // 用户名输入框
                         VStack(alignment: .leading, spacing: 8) {
@@ -86,8 +127,6 @@ struct MonitorLoginView: View {
                                 .background(hasLocalAccount ? Color.gray.opacity(0.15) : Color.gray.opacity(0.1))
                                 .cornerRadius(12)
                                 .font(.system(size: 16))
-                                .foregroundColor(hasLocalAccount ? .gray : .primary)
-                                .disabled(hasLocalAccount)  // 有本地账号时禁用输入
                         }
                         
                         // 密码输入框
@@ -126,7 +165,7 @@ struct MonitorLoginView: View {
                             .cornerRadius(12)
                         }
                         
-                        // 登录按钮
+                        // 登录按钮（老样式：蓝色圆角）
                         Button(action: {
                             handleLogin()
                         }) {
@@ -143,33 +182,33 @@ struct MonitorLoginView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(isLoading ? Color.gray : Color.blue)
-                                                .cornerRadius(12)
+                            .cornerRadius(12)
                         }
-                        .disabled(isLoading)  // 加载时禁用按钮
+                        .disabled(isLoading)
                         .padding(.top, 10)
                         
-                        // 注册链接 - 只有没有账号时才显示
+                        // 注册链接（老样式：没有账号时显示）
                         if !hasLocalAccount {
-                        HStack {
-                            Text("没有账号？")
-                                .font(.system(size: 14))
-                                .foregroundColor(.gray)
-                            Button(action: {
-                                showRegisterView = true
-                            }) {
-                                Text("点击注册")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.blue)
+                            HStack {
+                                Text("没有账号？")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.gray)
+                                Button(action: {
+                                    showRegisterView = true
+                                }) {
+                                    Text("点击注册")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.blue)
+                                }
                             }
-                        }
-                        .padding(.top, 10)
+                            .padding(.top, 10)
                         }
                     }
                     .padding(.horizontal, 30)
                     
                     Spacer()
                     
-                    // 底部协议条款
+                    // 底部协议条款（老样式）
                     VStack(spacing: 4) {
                         Text("登录/注册即表示您同意")
                             .font(.system(size: 12))
@@ -197,40 +236,43 @@ struct MonitorLoginView: View {
                             }
                         }
                     }
-                    .padding(.bottom, 30)
-                    .sheet(isPresented: $showUserAgreement) {
-                        WebView(url: APIConfig.StaticPages.userAgreement, title: "用户协议", isLocal: true)
-                    }
-                    .sheet(isPresented: $showPrivacyPolicy) {
-                        WebView(url: APIConfig.StaticPages.privacyPolicy, title: "隐私政策", isLocal: true)
+                    .padding(.bottom, 8)
+                    
+                    // 版本号（兼作设备ID隐藏入口，保留新版功能，视觉不打扰）
+                    Button(action: { showDeviceIdPage = true }) {
+                        Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                            .font(.system(size: 10))
+                            .foregroundColor(.gray.opacity(0.5))
+                            .padding(.bottom, 12)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(Rectangle())
                     }
                 }
             }
-            // 添加点击手势隐藏键盘
             .onTapGesture {
                 hideKeyboard()
             }
         }
         .navigationBarHidden(true)
+        .fullScreenCover(isPresented: $showDeviceIdPage) {
+            DeviceIdInfoView()
+        }
         .onAppear {
             loadLocalAccountInfo()
-            // 监听WebSocket连接状态
+            selectedConnectMode = ConnectModeOption.lastSelected  // 同步上次选择
             setupWebSocketNotificationListener()
-         }
+            checkForceUpdate()   // ⭐ 强制更新检查（总后台「App更新配置」，公共接口）
+        }
         .onDisappear {
-            // 移除通知监听
             NotificationCenter.default.removeObserver(self, name: .webSocketConnectionStateChanged, object: nil)
         }
-        .sheet(isPresented: $showRegisterView, onDismiss: {
-            // 🔥 sheet 关闭后重新加载本地账号信息
-            // RegisterView 在 dismiss 前已经保存了账号信息到本地
+        .fullScreenCover(isPresented: $showRegisterView, onDismiss: {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 loadLocalAccountInfo()
                 print("📱 注册页面关闭，重新加载本地账号: hasLocalAccount=\(hasLocalAccount)")
             }
         }) {
             RegisterView(onRegisterSuccess: { registeredUsername, registeredPassword in
-                // 🔥 注册成功后，先设置状态，再关闭 sheet
                 print("✅ 注册成功回调: username=\(registeredUsername)")
                 self.username = registeredUsername
                 self.password = registeredPassword
@@ -242,13 +284,103 @@ struct MonitorLoginView: View {
         } message: {
             Text(alertMessage)
         }
+        // ⭐ 强制更新：只有「立即更新」一个按钮，点完 0.5s 后重新弹出——不可绕过
+        .alert("发现新版本", isPresented: $showForceUpdate) {
+            Button("立即更新") {
+                if let url = URL(string: forceUpdateUrl) {
+                    UIApplication.shared.open(url)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { showForceUpdate = true }
+            }
+        } message: {
+            Text(forceUpdateMessage)
+        }
+        .alert("提示", isPresented: $showAlreadyBoundAlert) {
+            Button("确定", role: .cancel) { }
+        } message: {
+            Text("您的设备已经绑定了账号（\(username)）\n如需解绑请联系管理员")
+        }
+        .fullScreenCover(isPresented: $showUserAgreement) {
+            LocalWebView(fileName: "user_agreement", title: "用户协议")
+        }
+        .fullScreenCover(isPresented: $showPrivacyPolicy) {
+            LocalWebView(fileName: "privacy_policy", title: "隐私政策")
+        }
+        // ⭐ 登录页 toast（扫码绑定成功回登录页时提示「请重新登录」，2.5s 自动消失）
+        .overlay(alignment: .bottom) {
+            if !appState.loginToast.isEmpty {
+                Text(appState.loginToast)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color.black.opacity(0.75))
+                    .cornerRadius(22)
+                    .padding(.bottom, 80)
+                    .transition(.opacity)
+                    .onAppear {
+                        // 5s：这里也用于承载「不在同一 WiFi，请选择多人线路」这类操作指引（§52.6），2.5s 读不完
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                            appState.loginToast = ""
+                        }
+                    }
+            }
+        }
     }
     
-    // 设置WebSocket通知监听
-    // 设置WebSocket通知监听
+    // MARK: - ⭐ App 强制更新（与 Android AppUpdateManager 同一接口同一语义）
+    // 公共接口 GET /api/config/app-update（无需登录），返回 {config:"{\"ios\":{enabled,minVersion,downloadUrl},...}"}。
+    // 本地 CFBundleShortVersionString < minVersion 且 enabled → 弹不可绕过的强更弹窗跳 downloadUrl。
+    // 网络/解析失败一律放行（不能因接口抖动把用户锁在门外）。
+    private func checkForceUpdate() {
+        guard let url = URL(string: APIConfig.shared.baseURL + "/api/config/app-update") else { return }
+        var request = URLRequest(url: url, timeoutInterval: 10)
+        request.httpMethod = "GET"
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            guard let data = data,
+                  let outer = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let cfgStr = outer["config"] as? String,
+                  let cfgData = cfgStr.data(using: .utf8),
+                  let cfg = try? JSONSerialization.jsonObject(with: cfgData) as? [String: Any],
+                  let iosCfg = cfg["ios"] as? [String: Any] else {
+                print("📦 [强更] 检查失败(放行)")
+                return
+            }
+            let enabled = (iosCfg["enabled"] as? Bool) ?? false
+            let minVersion = (iosCfg["minVersion"] as? String) ?? ""
+            let downloadUrl = (iosCfg["downloadUrl"] as? String) ?? ""
+            guard enabled, !minVersion.isEmpty, !downloadUrl.isEmpty else {
+                print("📦 [强更] 未开启或未配置 → 放行")
+                return
+            }
+            let local = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            if MonitorLoginView.compareVersion(local, minVersion) < 0 {
+                print("📦 [强更] 本地=\(local) < 最低=\(minVersion) → 强制更新 \(downloadUrl)")
+                DispatchQueue.main.async {
+                    forceUpdateUrl = downloadUrl
+                    forceUpdateMessage = "当前版本 \(local) 已停止支持，请更新到 \(minVersion) 及以上版本后继续使用。"
+                    showForceUpdate = true
+                }
+            } else {
+                print("📦 [强更] 本地=\(local) ≥ 最低=\(minVersion) → 放行")
+            }
+        }.resume()
+    }
+
+    /// 语义化版本比较（"2.4" vs "2.4.1" 逐段数字比），返回 <0 / 0 / >0
+    private static func compareVersion(_ a: String, _ b: String) -> Int {
+        let pa = a.split(separator: ".").map { Int($0.filter { $0.isNumber }) ?? 0 }
+        let pb = b.split(separator: ".").map { Int($0.filter { $0.isNumber }) ?? 0 }
+        for i in 0..<max(pa.count, pb.count) {
+            let x = i < pa.count ? pa[i] : 0
+            let y = i < pb.count ? pb[i] : 0
+            if x != y { return x < y ? -1 : 1 }
+        }
+        return 0
+    }
+
     // 设置WebSocket通知监听
     private func setupWebSocketNotificationListener() {
-        // 监听 STOMP 连接状态变化
         NotificationCenter.default.addObserver(
             forName: .webSocketConnectionStateChanged,
             object: nil,
@@ -256,7 +388,6 @@ struct MonitorLoginView: View {
         ) { notification in
             print("🔔 收到STOMP连接状态变化通知")
             
-            // 获取连接状态
             if let connectionStateRaw = notification.userInfo?["connectionState"] as? String,
                let connectionState = ConnectionState(rawValue: connectionStateRaw) {
                 
@@ -264,23 +395,21 @@ struct MonitorLoginView: View {
                 case .connected:
                     print("✅ STOMP连接成功")
                     
-                    // 只在连接阶段处理状态变化
                     if loginStep == .connecting {
                         print("✅ STOMP连接成功，更新登录状态")
                         loginStep = .success
                         isLoading = false
-                        // 🔥 登录成功不弹框，直接进入主页
                         
-                        // 在这里调用 AppState 的登录成功方法
                         if let permanentToken = UserDefaults.standard.string(forKey: "permanent_token") {
-                            appState.loginSuccess(token: permanentToken)
+                            let scanValue = UserDefaults.standard.integer(forKey: "login_scan")
+                            // 🔥 传递 boundControlCount + scan 决定跳转目标
+                            appState.loginSuccess(token: permanentToken, boundControlCount: boundControlCount, scan: scanValue)
                         }
                     }
                     
                 case .disconnected, .error:
                     print("❌ STOMP连接断开或出错")
                     
-                    // 只在连接阶段处理状态变化
                     if loginStep == .connecting {
                         print("❌ STOMP连接失败")
                         loginStep = .failed
@@ -293,17 +422,50 @@ struct MonitorLoginView: View {
                 }
             }
         }
-        
     }
-    
-    
-    
 
-    // 获取登录按钮文本
+    // 连接方式单个选项芯片
+    @ViewBuilder
+    private func connectModeChip(_ mode: ConnectModeOption) -> some View {
+        let isSelected = (selectedConnectMode == mode)
+        let enabled = mode.isEnabled
+
+        Button(action: {
+            guard enabled else {
+                showAlert(message: "\(mode.title) 即将上线，敬请期待")
+                return
+            }
+            selectedConnectMode = mode
+            UserDefaults.standard.set(mode.rawValue, forKey: ConnectModeOption.storageKey)
+        }) {
+            Text(mode.title)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(
+                    !enabled ? Color(hex: "C4C4C4")
+                    : (isSelected ? .white : Color(hex: "65AEF7"))
+                )
+                .frame(minWidth: 44)
+                .padding(.vertical, 6)
+                .background(
+                    Group {
+                        if !enabled {
+                            Color(hex: "F0F0F0")
+                        } else if isSelected {
+                            Color(hex: "65AEF7")
+                        } else {
+                            Color(hex: "EAF4FE")
+                        }
+                    }
+                )
+                .cornerRadius(6)
+        }
+        .disabled(false)  // SRT 仍可点击以弹出提示
+    }
+
     private func getLoginButtonText() -> String {
         switch loginStep {
         case .idle:
-            return "登录"
+            return "立即登入"
         case .authenticating:
             return "验证中..."
         case .connecting:
@@ -311,47 +473,41 @@ struct MonitorLoginView: View {
         case .success:
             return "登录成功"
         case .failed:
-            return "登录"
+            return "立即登入"
         }
     }
-        
-    // 监听WebSocket连接状态
     
-    // 加载本地账号信息
     private func loadLocalAccountInfo() {
         if let savedAccount = AccountStorageManager.shared.loadAccountInfo() {
-            username = savedAccount.collectorAccount
+            // 🔥 保存完整账号用于登录
+            fullUsername = savedAccount.collectorAccount
+            // 🔥 显示前8位（昵称风格）
+            username = String(fullUsername.prefix(8))
             password = savedAccount.password
             hasLocalAccount = true
-            print("已加载本地保存的账号信息")
+            rememberPassword = true
+            print("已加载本地账号: 显示=\(username), 完整=\(fullUsername)")
         } else {
             hasLocalAccount = false
             print("没有本地保存的账号信息")
         }
     }
     
-    // 清除本地账号信息
     private func clearLocalAccount() {
         if AccountStorageManager.shared.clearAccountInfo() {
             username = ""
+            fullUsername = ""
             password = ""
             hasLocalAccount = false
             showAlert(message: "已清除本地保存的账号信息")
         }
     }
 
-    // 隐藏键盘的方法
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
     
-    // 处理登录逻辑 - 修改为分步骤处理
-    
-    
-    
-    
     private func handleLogin() {
-        // 输入验证
         guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showAlert(message: "请输入用户名")
             return
@@ -362,123 +518,145 @@ struct MonitorLoginView: View {
             return
         }
         
-        // 开始登录流程
         isLoading = true
         loginStep = .authenticating
         
         Task {
             do {
-                // 第一步：API登录验证
+                // 🔥 如果输入框的值跟本地前8位一致，用完整账号；否则用输入框的值（用户手动改过）
+                let loginUsername: String
+                if hasLocalAccount && username == String(fullUsername.prefix(8)) {
+                    loginUsername = fullUsername  // 本地账号未被修改，传完整账号
+                } else {
+                    loginUsername = username      // 用户手动输入的，传什么就是什么
+                }
                 let loginResponse = try await APIService.shared.login(
-                    username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+                    username: loginUsername.trimmingCharacters(in: .whitespacesAndNewlines),
                     password: password.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 
                 await MainActor.run {
-                    // 保存登录信息
                     UserDefaults.standard.set(loginResponse.token, forKey: "jwt_token")
                     UserDefaults.standard.set(loginResponse.permanentToken, forKey: "permanent_token")
                     UserDefaults.standard.set(loginResponse.username, forKey: "username")
                     UserDefaults.standard.set(loginResponse.deviceId, forKey: "device_id")
                     UserDefaults.standard.set(loginResponse.userType, forKey: "user_type")
                     
-                    // 🔥 保存昵称
+                    // 🔥 保存用户ID（用于问题反馈等功能）
+                    if let userId = loginResponse.userId {
+                        UserDefaults.standard.set(userId, forKey: "user_id")
+                        print("✅ 保存用户ID: \(userId)")
+                    }
+                    
                     if let nickname = loginResponse.nickname {
                         UserDefaults.standard.set(nickname, forKey: "nickname")
                         print("✅ 保存昵称: \(nickname)")
                     }
                     
-                    // 🔥 保存推流IP地址
                     if let streamPushIp = loginResponse.streamPushIp {
                         UserDefaults.standard.set(streamPushIp, forKey: "stream_push_ip")
                         print("✅ 保存推流IP: \(streamPushIp)")
                     }
+
+                    // ⭐ §53.4-定稿：连接方式**改以后端下发为准**（不再被登录页选择覆盖）。
+                    //   "srs" = 总后台一键强制多人线路；其它（auto/p2p/缺省）= 交给 SessionPolicy
+                    //   在推流前按"与观看端是否同 WiFi"自动决定。用户已无从手选。
+                    let connectMode = (loginResponse.connectMode ?? "auto").lowercased()
+                    UserDefaults.standard.set(connectMode, forKey: "connect_mode")
+                    UserDefaults.standard.set(loginResponse.maxP2PViewers ?? 4, forKey: "maxP2PViewers")
+                    // ⭐ §53.21：forceRelay / iceServers 不再落地——P2P 中继与打洞代码已物理删除
+                    //  （纯局域网 host-only 直连），后端这两个字段对 iOS 已无消费方。
+                    //   顺带清掉历史残留，防旧 key 误导排查。
+                    UserDefaults.standard.removeObject(forKey: "forceRelay")
+                    UserDefaults.standard.removeObject(forKey: "iceServers")
+
+                    // ⭐ §53.4.4 编码默认值改由总后台配置（本机硬编或观看端内核不支持时
+                    //   由 SessionPolicy/H265Support 自动回退 h264）。
+                    //   §56.27：产品默认改 h264——字段缺省（老后端）也按 h264，与后端部署无关。
+                    let codecP2p = (loginResponse.videoCodecP2p ?? "h264").lowercased()
+                    let codecSrs = (loginResponse.videoCodecSrs ?? "h264").lowercased()
+                    UserDefaults.standard.set(codecP2p, forKey: VideoCodecOption.storageKey)
+                    UserDefaults.standard.set(codecSrs, forKey: VideoCodecOption.srsStorageKey)
+
+                    // ⭐ §53.20.2：本机公网出口 IP（后端按请求来源回填）。SessionPolicy 拿它与
+                    //   PC 上报的 publicIp 比对，防 /24 网段号撞车误判同 WiFi。老后端无此字段 → 存空。
+                    UserDefaults.standard.set(loginResponse.clientIp ?? "", forKey: "public_ip")
+
+                    // ⭐ 需求#13（2026-07-31）：后端下发的 iOS 最新版本号（总后台可配，空=不提示）。
+                    //   进推流页前 ContentView 与本地 CFBundleShortVersionString 比对，不一致弹提示（软提示，可继续用）。
+                    UserDefaults.standard.set(loginResponse.latestVersions?.ios ?? "", forKey: "latest_ios_version")
+
+                    print("✅ 连接方式(后端): \(connectMode), 编码默认(后端) P2P=\(codecP2p)/SRS=\(codecSrs), maxP2PViewers: \(loginResponse.maxP2PViewers ?? 4)（P2P=纯局域网直连，无中继/打洞）")
                     
-                    // 🔥 保存试用/激活信息
                     if let trialInfo = loginResponse.trialInfo {
                         saveTrialInfo(trialInfo)
                     }
                     
-                    // 进入WebSocket连接阶段
+                    // 🔥 保存绑定控制端数量和scan字段
+                    boundControlCount = loginResponse.boundControlCount ?? 1
+                    let scanValue = loginResponse.scan ?? 0
+                    UserDefaults.standard.set(scanValue, forKey: "login_scan")
+                    print("✅ 绑定控制端数量: \(boundControlCount), scan: \(scanValue)")
+                    
                     loginStep = .connecting
                 }
                 
-                // 🔥 登录时不检查试用状态，允许进入主页
-                // 推流和唤醒时会检查试用状态，到时再弹框引导激活
-                
-                // 第二步：获取设备简化配置
                 let thinConfig = try await ConfigManager.shared.getThinRemoteConfig(deviceId: loginResponse.deviceId)
                 ConfigManager.shared.cacheThinConfig(thinConfig)
                 
                 await MainActor.run {
-                    // 第三步：建立WebSocket连接
                     WebSocketManager.shared.connect(deviceId: loginResponse.deviceId)
                     
-                    // 保存账号信息到本地
-                    let savedAccountInfo = SavedAccountInfo(
-                        collectorAccount: loginResponse.username,
-                        controllerAccount: "",
-                        password: password,
-                        deviceId: loginResponse.deviceId,
-                        savedDate: Date()
-                    )
-                    
-                    if AccountStorageManager.shared.saveAccountInfo(savedAccountInfo) {
-                        print("账号信息已保存到本地")
+                    // 根据"记住密码"选项保存账号
+                    if rememberPassword {
+                        let savedAccountInfo = SavedAccountInfo(
+                            collectorAccount: loginResponse.username,
+                            controllerAccount: "",
+                            password: password,
+                            deviceId: loginResponse.deviceId,
+                            savedDate: Date()
+                        )
+                        
+                        if AccountStorageManager.shared.saveAccountInfo(savedAccountInfo) {
+                            print("账号信息已保存到本地")
+                        }
                     }
                 }
-                
-                // 注意：这里不设置isLoading = false，等WebSocket连接成功后再设置
                 
             } catch let error as APIError {
                 await MainActor.run {
                     loginStep = .failed
                     isLoading = false
                     
-                    // 🔥 获取错误消息
                     let errorMessage: String
                     switch error {
                     case .accountBanned(let reason):
-                        // 🔥 账号被封禁，显示封禁原因（不清空账号信息）
                         errorMessage = "账号已被封禁\n原因：\(reason)"
                         print("❌ 账号被封禁: \(reason)")
                         
                     case .serverErrorWithMessage(let msg):
                         errorMessage = msg
-                        
-                        // 🔥 如果是"账号不存在"，清空本地存储并显示注册行
-                        if msg.contains("账号不存在") || msg.contains("用户名不存在") {
-                            print("⚠️ 账号不存在，清空本地存储并显示注册行")
-                            _ = AccountStorageManager.shared.clearAccountInfo()
-                            username = ""
-                            password = ""
-                            hasLocalAccount = false
-                        }
                     default:
                         errorMessage = error.localizedDescription
                     }
                     
-                    // 🔥 弹框显示错误信息
                     showAlert(message: errorMessage)
                 }
             } catch {
                 await MainActor.run {
                     loginStep = .failed
                     isLoading = false
-                    // 🔥 弹框显示错误信息
                     showAlert(message: "登录失败：\(error.localizedDescription)")
                 }
             }
         }
     }
     
-    // 显示提示信息
     private func showAlert(message: String) {
         alertMessage = message
         showAlert = true
     }
     
-    // 🔥 保存试用/激活信息到 UserDefaults
     private func saveTrialInfo(_ trialInfo: TrialInfo) {
         UserDefaults.standard.set(trialInfo.trialRequired, forKey: "trial_required")
         UserDefaults.standard.set(trialInfo.activated ?? false, forKey: "activated")
@@ -492,8 +670,18 @@ struct MonitorLoginView: View {
         if let expireAt = trialInfo.activationExpireAt {
             UserDefaults.standard.set(expireAt, forKey: "activation_expire_at")
         }
+        // ⭐ §53.9 开通时间（「我的」页把"注册时间"整行换成「<等级>会员 + 开通时间」）
+        if let activationTime = trialInfo.activationTime {
+            UserDefaults.standard.set(activationTime, forKey: "activation_time")
+        }
         if let qualityAccess = trialInfo.qualityAccess {
             UserDefaults.standard.set(qualityAccess, forKey: "quality_access")
+        }
+        
+        // 🔥 日试用相关（新增）
+        UserDefaults.standard.set(trialInfo.isDailyTrial ?? false, forKey: "is_daily_trial")
+        if let activationRemaining = trialInfo.activationRemainingSeconds {
+            UserDefaults.standard.set(activationRemaining, forKey: "activation_remaining_seconds")
         }
         
         UserDefaults.standard.set(trialInfo.trialEnded ?? false, forKey: "trial_ended")
@@ -514,11 +702,28 @@ struct MonitorLoginView: View {
             UserDefaults.standard.set(usedSeconds, forKey: "used_seconds")
         }
         
-        print("✅ 保存试用信息: trialRequired=\(trialInfo.trialRequired), activated=\(trialInfo.activated ?? false), level=\(trialInfo.activationLevelName ?? "无")")
+        let isDailyTrialStr = (trialInfo.isDailyTrial ?? false) ? ", 日试用" : ""
+        print("✅ 保存试用信息: trialRequired=\(trialInfo.trialRequired), activated=\(trialInfo.activated ?? false), level=\(trialInfo.activationLevelName ?? "无")\(isDailyTrialStr)")
     }
 }
 
-// SwiftUI预览
+// 圆角扩展 - 支持指定角
+extension View {
+    func cornerRadius(_ radius: CGFloat, corners: UIRectCorner) -> some View {
+        clipShape(RoundedCorner(radius: radius, corners: corners))
+    }
+}
+
+struct RoundedCorner: Shape {
+    var radius: CGFloat = .infinity
+    var corners: UIRectCorner = .allCorners
+
+    func path(in rect: CGRect) -> Path {
+        let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
+        return Path(path.cgPath)
+    }
+}
+
 #Preview {
     MonitorLoginView()
 }

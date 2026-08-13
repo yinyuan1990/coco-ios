@@ -19,7 +19,7 @@ struct DeviceBindingQRScannerView: View {
     @State private var isBinding = false
     @State private var bindingError: String?
     
-    // 🔥 二级密码输入
+    // 🔥 绑定码输入
     @State private var secondaryPassword: String = ""
     
     // 扫描框尺寸
@@ -38,40 +38,38 @@ struct DeviceBindingQRScannerView: View {
             }
             .navigationTitle(showConfirm ? "确认绑定" : "扫一扫")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
                         if showConfirm {
                             // 返回扫码界面
                             showConfirm = false
                             scannedCode = ""
-                            secondaryPassword = ""  // 🔥 重置二级密码
+                            secondaryPassword = ""  // 🔥 重置绑定码
                             isScanning = true
                         } else {
                             dismiss()
                         }
                     }) {
-                        Image(systemName: showConfirm ? "chevron.left" : "xmark")
+                        Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(showConfirm ? Color(hex: "1A1A1A") : .white)
                     }
                 }
-            }
+            })
             .onAppear {
-                // 设置导航栏样式为深色
-                let appearance = UINavigationBarAppearance()
-                appearance.configureWithTransparentBackground()
-                appearance.backgroundColor = UIColor.black.withAlphaComponent(0.6)
-                appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
-                UINavigationBar.appearance().standardAppearance = appearance
-                UINavigationBar.appearance().scrollEdgeAppearance = appearance
+                // 设置导航栏样式
+                updateNavigationBarAppearance(isConfirmView: false)
             }
+            .onChange(of: showConfirm, perform: { isConfirm in
+                updateNavigationBarAppearance(isConfirmView: isConfirm)
+            })
         }
-        .onChange(of: scannedCode) { newValue in
+        .onChange(of: scannedCode, perform: { newValue in
             if !newValue.isEmpty && !showConfirm {
                 handleScanResult(newValue)
             }
-        }
+        })
         .alert("扫描错误", isPresented: $showError) {
             Button("确定") {
                 // 重新开始扫描
@@ -117,112 +115,131 @@ struct DeviceBindingQRScannerView: View {
         }
     }
     
-    // MARK: - 确认绑定界面
+    // MARK: - 确认绑定界面（灰白配风格）
     private var confirmView: some View {
-        VStack(spacing: 30) {
-            Spacer()
+        VStack(spacing: 0) {
+            // 顶部间距
+            Color.clear.frame(height: 40)
             
-            // 图标
-            Image(systemName: "link.circle.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.blue)
-            
-            // 标题
-            Text("确认绑定设备")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-            
-            // 绑定信息
-            VStack(spacing: 16) {
-                HStack {
-                    Text("当前设备")
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text(deviceUsername)
-                        .foregroundColor(.white)
-                        .fontWeight(.medium)
-                }
+            // 设备信息区域
+            VStack(spacing: 0) {
+                // 图标
+                Image(systemName: "link.circle")
+                    .font(.system(size: 40))
+                    .foregroundColor(.primary)
+                    .padding(.bottom, 16)
                 
-                Divider()
-                    .background(Color.gray.opacity(0.3))
+                // 设备名称
+                Text(deviceUsername)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color(hex: "1A1A1A"))
                 
-                HStack {
-                    Text("绑定到控制端")
-                        .foregroundColor(.gray)
-                    Spacer()
-                    Text(scannedCode)
-                        .foregroundColor(.green)
-                        .fontWeight(.medium)
-                }
-                
-                Divider()
-                    .background(Color.gray.opacity(0.3))
-                
-                // 🔥 二级密码输入
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("请输入二级密码")
-                        .foregroundColor(.gray)
-                        .font(.system(size: 14))
-                    
-                    SecureField("二级密码", text: $secondaryPassword)
-                        .textFieldStyle(PlainTextFieldStyle())
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
-                }
+                // 绑定到
+                Text("绑定到 \(scannedCode)")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
+                    .padding(.top, 8)
             }
-            .padding()
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(12)
-            .padding(.horizontal, 30)
+            .padding(.vertical, 24)
+            
+            // 分隔线
+            Divider()
+                .padding(.leading, 20)
+            
+            // 警告提示
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 16))
+                    .foregroundColor(.orange)
+                
+                Text("绑定后，控制端可远程管理此设备")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(Color(hex: "F4F4F8"))
+            
+            // 绑定码输入区域
+            VStack(alignment: .leading, spacing: 12) {
+                Text("请输入绑定码")
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
+                
+                SecureField("绑定码", text: $secondaryPassword)
+                    .textFieldStyle(PlainTextFieldStyle())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .background(Color(hex: "F4F4F8"))
+                    .cornerRadius(10)
+                    .foregroundColor(Color(hex: "1A1A1A"))
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
             
             Spacer()
             
-            // 按钮
-            VStack(spacing: 12) {
+            // 按钮区域
+            VStack(spacing: 16) {
+                // 确认绑定按钮
                 Button(action: {
                     performBinding()
                 }) {
                     if isBinding {
                         ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "FAFAFA")))
+                            .frame(width: 160, height: 46)
                     } else {
                         Text("确认绑定")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(Color(hex: "FAFAFA"))
+                            .frame(width: 160, height: 46)
                     }
                 }
-                .background(Color.blue)
-                .cornerRadius(12)
+                .background(
+                    secondaryPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBinding
+                    ? Color(hex: "CCCCCC")
+                    : Color.blue
+                )
+                .cornerRadius(10)
                 .disabled(isBinding)
                 
+                // 重新扫码按钮
                 Button(action: {
                     // 返回扫码界面
                     showConfirm = false
                     scannedCode = ""
-                    secondaryPassword = ""  // 🔥 重置二级密码
+                    secondaryPassword = ""  // 🔥 重置绑定码
                     isScanning = true
                 }) {
                     Text("重新扫码")
-                        .font(.headline)
-                        .foregroundColor(.gray)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 50)
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(hex: "808080"))
                 }
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(12)
             }
-            .padding(.horizontal, 30)
             .padding(.bottom, 50)
         }
-        .background(Color.black)
+        .background(Color.white)
+    }
+    
+    // MARK: - 更新导航栏外观
+    private func updateNavigationBarAppearance(isConfirmView: Bool) {
+        let appearance = UINavigationBarAppearance()
+        if isConfirmView {
+            // 确认界面：白色背景
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = .white
+            appearance.titleTextAttributes = [.foregroundColor: UIColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)]
+        } else {
+            // 扫码界面：深色背景
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+            appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+        }
+        UINavigationBar.appearance().standardAppearance = appearance
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
     }
     
     // MARK: - 处理扫描结果
@@ -244,9 +261,9 @@ struct DeviceBindingQRScannerView: View {
     
     // MARK: - 执行绑定
     private func performBinding() {
-        // 🔥 验证二级密码不为空
+        // 🔥 验证绑定码不为空
         guard !secondaryPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            bindingError = "请输入二级密码"
+            bindingError = "请输入绑定码"
             return
         }
         
@@ -262,7 +279,7 @@ struct DeviceBindingQRScannerView: View {
                 
                 print("✅ 创建绑定记录成功: bindingId=\(createResponse.bindingId)")
                 
-                // 第二步：验证设备端二级密码
+                // 第二步：验证设备端绑定码
                 let verifyResponse = try await APIService.shared.verifyDeviceBinding(
                     bindingId: createResponse.bindingId,
                     secondaryPassword: secondaryPassword.trimmingCharacters(in: .whitespacesAndNewlines)

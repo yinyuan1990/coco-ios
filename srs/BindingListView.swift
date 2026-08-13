@@ -17,11 +17,20 @@ struct BindingListView: View {
     // 解绑相关状态（使用 item 绑定确保数据同步）
     @State private var selectedBinding: APIService.BindingItem?
     
+    // 标题（包含绑定数量）
+    private var titleText: String {
+        if bindings.isEmpty {
+            return "已绑定列表"
+        } else {
+            return "已绑定列表（\(bindings.count)）"
+        }
+    }
+    
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景色
-                Color(.systemGroupedBackground)
+                // 背景色（白色，和我的界面一致）
+                Color.white
                     .ignoresSafeArea()
                 
                 if isLoading {
@@ -73,31 +82,36 @@ struct BindingListView: View {
                     }
                 } else {
                     // 绑定列表
-                    List {
-                        Section {
+                    ScrollView {
+                        VStack(spacing: 0) {
                             ForEach(bindings) { binding in
-                                BindingRowView(binding: binding) {
-                                    selectedBinding = binding  // 🔥 直接设置，sheet(item:) 会自动显示
+                                VStack(spacing: 0) {
+                                    BindingRowView(binding: binding) {
+                                        selectedBinding = binding
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 16)
+                                    
+                                    Divider()
+                                        .padding(.leading, 76)
                                 }
                             }
-                        } header: {
-                            Text("已绑定的控制端")
-                        } footer: {
-                            Text("共 \(bindings.count) 个绑定")
                         }
+                        .background(Color.white)
                     }
-                    .listStyle(.insetGrouped)
                     .refreshable {
                         await loadBindings()
                     }
                 }
             }
-            .navigationTitle("已绑定列表")
+            .navigationTitle(titleText)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("关闭") {
-                        dismiss()
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(Color(hex: "1A1A1A"))
                     }
                 }
                 
@@ -109,12 +123,13 @@ struct BindingListView: View {
                             }
                         }) {
                             Image(systemName: "arrow.clockwise")
+                                .foregroundColor(Color(hex: "1A1A1A"))
                         }
                     }
                 }
-            }
-            // 🔥 解绑页面（使用 sheet(item:) 确保数据同步，避免白屏）
-            .sheet(item: $selectedBinding) { binding in
+            })
+            // 🔥 解绑页面（全屏显示）
+            .fullScreenCover(item: $selectedBinding) { binding in
                 UnbindView(binding: binding) {
                     // 解绑成功后从列表中移除
                     bindings.removeAll { $0.bindingId == binding.bindingId }
@@ -176,34 +191,29 @@ struct BindingRowView: View {
     let onUnbind: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
-            // 图标
-            ZStack {
-                Circle()
-                    .fill(Color.green.opacity(0.15))
-                    .frame(width: 44, height: 44)
-                
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 18))
-                    .foregroundColor(.green)
-            }
+        HStack(spacing: 16) {
+            // 图标（与 ProfileRowView 风格一致）
+            Image(systemName: "desktopcomputer")
+                .font(.system(size: 20))
+                .foregroundColor(.primary)
+                .frame(width: 24, height: 24)
             
             // 信息
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    // 🔥 优先显示昵称，没有昵称则显示脱敏账号
-                    if let nickname = binding.controlNickname, !nickname.isEmpty {
-                        Text(nickname)
-                            .font(.system(size: 16, weight: .medium))
-                    } else {
-                        Text(maskUsername(binding.controlUsername))
-                            .font(.system(size: 16, weight: .medium))
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                // 🔥 优先显示昵称，没有昵称则显示脱敏账号
+                if let nickname = binding.controlNickname, !nickname.isEmpty {
+                    Text(nickname)
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary)
+                } else {
+                    Text(maskUsername(binding.controlUsername))
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary)
                 }
                 
                 if let time = binding.createdAt {
                     Text("绑定时间: \(formatTime(time))")
-                        .font(.system(size: 12))
+                        .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 }
             }
@@ -213,16 +223,16 @@ struct BindingRowView: View {
             // 解绑按钮
             Button(action: onUnbind) {
                 Text("解绑")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
             }
             .buttonStyle(.plain)
+            
+            // 箭头
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.secondary)
         }
-        .padding(.vertical, 4)
     }
     
     // 🔥 账号脱敏：前2位 + ** + 后2位，小于等于4位直接显示

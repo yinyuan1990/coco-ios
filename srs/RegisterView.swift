@@ -27,6 +27,16 @@ struct DeviceRegisterResponse: Codable {
     let message: String
 }
 
+// ⭐ 注册错误 — 当后端返回 "设备已注册" 类错误时, 会附带 existingUsername / existingNickname
+//   iOS 检测到这两个字段就引导用户用现有账号登录, 避免"登录失败 → 注册失败"死循环
+struct DeviceRegisterError: Error, LocalizedError {
+    let message: String
+    let existingUsername: String?
+    let existingNickname: String?
+    var errorDescription: String? { message }
+    var hasRecoveryUser: Bool { (existingUsername ?? "").isEmpty == false }
+}
+
 // 注册数据（用于界面显示）
 struct RegisterData {
     let username: String
@@ -56,12 +66,19 @@ struct RegisterView: View {
     @State private var alertMessage = ""
     @State private var registerResult: RegisterData?
     @State private var showSuccessView = false
+
+    // ⭐ 死循环恢复 — 当注册返回 "设备已注册" 且后端给出 existingUsername 时弹此对话框,
+    //   一键回到登录页用现有账号登录 (用户只需输密码即可).
+    @State private var showRecoveryAlert: Bool = false
+    @State private var recoveryUsername: String = ""
+    @State private var recoveryNickname: String = ""
     
     // 用户输入
     @State private var username = ""
     @State private var nickname = ""  // 🔥 新增昵称字段
     @State private var password = ""
     @State private var secondaryPassword = ""
+    @State private var isPasswordVisible = false  // 密码可见性
     
     // 密保问题和答案（默认答案为1、2、3）
     @State private var question1 = "您的出生年月日是？"
@@ -88,13 +105,9 @@ struct RegisterView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景
-                LinearGradient(
-                    gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                // 背景 - 白色
+                Color.white
+                    .ignoresSafeArea()
                 
                 if showSuccessView, let result = registerResult {
                     // 注册成功界面
@@ -104,215 +117,181 @@ struct RegisterView: View {
                         onBackToLogin: { backToLoginWithCredentials(result) }
                     )
                 } else {
-                    // 注册表单 - 使用 VStack 包裹 ScrollView + 固定底部按钮
                     VStack(spacing: 0) {
-                        // 顶部留空给关闭按钮
-                        Color.clear.frame(height: 50)
+                        // 顶部安全区域
+                        Color.clear.frame(height: 25)
                         
-                        // 可滚动的表单内容
-                        ScrollView {
-                            VStack(spacing: 20) {
-                        // 标题区域
-                        VStack(spacing: 8) {
-                                    Text("设备端注册")
-                                        .font(.system(size: 28, weight: .bold))
-                                .foregroundColor(.primary)
-                            
-                                    Image(systemName: "iphone.gen3")
-                                        .font(.system(size: 50))
-                                        .foregroundColor(.blue)
-                                        .padding(.top, 10)
-                                
-                                    Text("请填写注册信息")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.secondary)
-                                }
-                                .padding(.top, 10)
-                                
-                                // 基本信息
-                            VStack(spacing: 15) {
-                                // 用户名（账号）- 8-12位，无自动生成
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("账号（必填）")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                    
-                                    TextField("请输入8-12位字母或数字", text: $username)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                        .autocapitalization(.none)
-                                        .onChange(of: username) { newValue in
-                                            // 限制为12位
-                                            if newValue.count > 12 {
-                                                username = String(newValue.prefix(12))
-                                            }
-                                        }
-                                    
-                                    Text("8-12位字母或数字组合，全局唯一")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                // 昵称 - 自动生成，不可手动输入
-                                VStack(alignment: .leading, spacing: 8) {
-                                    HStack {
-                                        Text("昵称（自动生成）")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                                        Button(action: {
-                                            nickname = generateNickname()
-                                        }) {
-                                            HStack(spacing: 4) {
-                                                Image(systemName: "arrow.clockwise")
-                                                    .font(.system(size: 12))
-                                                Text("换一个")
-                                                    .font(.system(size: 12))
-                                            }
-                                        .foregroundColor(.blue)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 6)
-                                            .background(Color.blue.opacity(0.1))
-                                            .cornerRadius(8)
-                                        }
-                                    }
-                                    
-                                    // 只读显示昵称，不允许编辑
-                                    Text(nickname.isEmpty ? "自动生成中..." : nickname)
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.primary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 10)
-                                        .background(Color(.systemGray6))
-                                        .cornerRadius(8)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(Color(.systemGray4), lineWidth: 1)
-                                        )
-                                    
-                                    Text("系统自动生成，点击「换一个」更换")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                // 登录密码
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("登录密码（必填）")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.secondary)
-                                    
-                                    SecureField("6-20位密码", text: $password)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    
-                                    Text("密码长度6-20位")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                // 二级密码
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("二级密码（必填）")
-                                        .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(.secondary)
-                                    
-                                    SecureField("6-20位二级密码", text: $secondaryPassword)
-                                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    
-                                    Text("用于设备绑定验证，可通过密保问题找回")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.gray)
-                            }
-                            }
-                            .padding(.horizontal, 30)
-                            
-                            // 密保答案使用默认值，不显示在UI上
-                            
-                            // 底部留空，给固定按钮留空间
-                            Color.clear.frame(height: 20)
-                        }
-                    }
-                    
-                    // 固定在底部的注册按钮区域
-                    VStack(spacing: 12) {
-                        Divider()
-                            
-                        // 注册按钮
+                        // 顶部导航栏
+                        HStack {
                             Button(action: {
-                                handleRegister()
+                                dismiss()
                             }) {
-                                HStack {
-                                    if isRegistering {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                            .scaleEffect(0.8)
-                                    }
-                                Text(isRegistering ? "注册中..." : "立即注册")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .foregroundColor(.white)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                            .background(isRegistering ? Color.gray : (canRegister ? Color.blue : Color.gray))
-                                .cornerRadius(12)
-                        }
-                        .disabled(!canRegister || isRegistering)
-                        .padding(.horizontal, 20)
-                        
-                        // 底部协议条款
-                        VStack(spacing: 4) {
-                            Text("注册即表示您同意")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(Color(hex: "1A1A1A"))
+                            }
                             
-                            HStack(spacing: 4) {
-                                Button(action: {
-                                    showUserAgreement = true
-                                }) {
-                                    Text("《用户协议》")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.blue)
+                            Spacer()
+                            
+                            Text("监控注册")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(Color(hex: "1A1A1A"))
+                            
+                            Spacer()
+                            
+                            // 占位，保持标题居中
+                            Color.clear.frame(width: 18)
+                        }
+                        .padding(.horizontal, 16)
+                        .frame(height: 44)
+                        
+                        // 分隔线
+                        Divider()
+                            .background(Color(hex: "F0F0F0"))
+                        
+                        // 可滚动内容
+                        ScrollView {
+                            VStack(spacing: 30) {
+                                // 输入表单
+                                VStack(spacing: 0) {
+                                    // 账号输入（用户手动输入9-12位，注册时自动添加 Y- 前缀）
+                                    HStack(spacing: 6) {
+                                        ZStack {
+                                            Circle()
+                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
+                                                .frame(width: 20, height: 20)
+                                            Image(systemName: "person")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Color(hex: "1A1A1A"))
+                                        }
+                                        .frame(width: 24, height: 24)
+                                        
+                                        TextField("请输入账号(9-12位)", text: $username)
+                                            .font(.system(size: 16))
+                                            .keyboardType(.asciiCapable)
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: username, perform: { newValue in
+                                                // 限制只能输入字母和数字，最多12位
+                                                let filtered = newValue.filter { $0.isLetter || $0.isNumber }
+                                                if filtered.count > 12 {
+                                                    username = String(filtered.prefix(12))
+                                                } else if filtered != newValue {
+                                                    username = filtered
+                                                }
+                                            })
+                                        
+                                        Spacer()
+                                        
+                                        // 显示当前输入长度
+                                        Text("\(username.count)/12")
+                                                .font(.system(size: 12))
+                                            .foregroundColor(username.count >= 9 ? Color(hex: "4CAF50") : Color(hex: "A3A3A3"))
+                                    }
+                                    .padding(.vertical, 16)
+                                    
+                                    Divider().background(Color(hex: "F0F0F0"))
+                                    
+                                    // 登录密码
+                                    HStack(spacing: 6) {
+                                        ZStack {
+                                            Circle()
+                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
+                                                .frame(width: 20, height: 20)
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Color(hex: "1A1A1A"))
+                                        }
+                                        .frame(width: 24, height: 24)
+                                        
+                                        if isPasswordVisible {
+                                            TextField("请输入登录密码", text: $password)
+                                                .font(.system(size: 16))
+                                        } else {
+                                            SecureField("请输入登录密码", text: $password)
+                                                .font(.system(size: 16))
+                                        }
+                                        
+                                        Spacer()
+                                        
+                                        Button(action: { isPasswordVisible.toggle() }) {
+                                            Image(systemName: isPasswordVisible ? "eye" : "eye.slash")
+                                                .font(.system(size: 14))
+                                                .foregroundColor(Color(hex: "A3A3A3"))
+                                        }
+                                    }
+                                    .padding(.vertical, 16)
+                                    
+                                    Divider().background(Color(hex: "F0F0F0"))
+                                    
+                                    // 绑定码
+                                    HStack(spacing: 6) {
+                                        ZStack {
+                                            Circle()
+                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
+                                                .frame(width: 20, height: 20)
+                                            Image(systemName: "lock.fill")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(Color(hex: "1A1A1A"))
+                                        }
+                                        .frame(width: 24, height: 24)
+                                        
+                                        // ⭐ 需求#6（2026-07-31）：统一叫「绑定密码」
+                                        SecureField("请输入绑定密码", text: $secondaryPassword)
+                                            .font(.system(size: 16))
+                                    }
+                                    .padding(.vertical, 16)
+                                    
+                                    Divider().background(Color(hex: "F0F0F0"))
+
+                                    // ⭐ 需求#6：绑定密码说明（醒目提示）
+                                    Text("💡 用于绑定PC端的密码，可以和登录密码一样")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(Color(hex: "FF7A00"))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.top, 12)
                                 }
+                                .padding(.horizontal, 22)
                                 
-                                Text("和")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.gray)
-                                
+                                // 立即注册按钮（样式与登录按钮一致）
                                 Button(action: {
-                                    showPrivacyPolicy = true
+                                    handleRegister()
                                 }) {
-                                    Text("《隐私政策》")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.blue)
+                                    HStack {
+                                        if isRegistering {
+                                            ProgressView()
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                                .scaleEffect(0.8)
+                                        }
+                                        Text(isRegistering ? "注册中..." : "立即注册")
+                                            .font(.system(size: 18, weight: .semibold))
+                                            .foregroundColor(.white)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 48)
+                                    .background(
+                                        isRegistering ?
+                                        AnyView(Color.gray) :
+                                        AnyView(LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(hex: "B7F4FC"),
+                                                Color(hex: "93D6F9"),
+                                                Color(hex: "65AEF7")
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
+                                    )
+                                    .cornerRadius(8)
                                 }
+                                .disabled(isRegistering)
+                                .padding(.horizontal, 20)
+                                .padding(.top, 20)
+                                
+                                Spacer()
                             }
                         }
-                        .padding(.bottom, 20)
                     }
-                    .background(Color.white)
-                    }
-                }
-                
-                // 顶部关闭按钮
-                VStack {
-                    HStack {
-                        Button(action: {
-                            dismiss()
-                        }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.gray)
-                                .frame(width: 32, height: 32)
-                                .background(Color.black.opacity(0.1))
-                                .clipShape(Circle())
-                        }
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    
-                    Spacer()
                 }
             }
             .onTapGesture {
@@ -325,17 +304,27 @@ struct RegisterView: View {
         } message: {
             Text(alertMessage)
         }
+        // ⭐ 死循环恢复对话框 — 此设备已注册过账号, 引导用户用现有账号登录
+        .alert("此设备已注册账号", isPresented: $showRecoveryAlert) {
+            Button("用此账号登录") {
+                let displayUser = recoveryUsername
+                onRegisterSuccess?(displayUser, "")  // 密码留空, 用户在登录页手动输入
+                dismiss()
+            }
+            Button("取消", role: .cancel) { }
+        } message: {
+            let nameHint = recoveryNickname.isEmpty ? "" : "（昵称: \(recoveryNickname)）"
+            Text("此设备已绑定账号「\(recoveryUsername)」\(nameHint)\n\n请用该账号登录, 然后输入对应密码。\n如已忘记密码, 请联系客服解绑此设备。")
+        }
         .sheet(isPresented: $showUserAgreement) {
-            WebView(url: APIConfig.StaticPages.userAgreement, title: "用户协议", isLocal: true)
+            LocalWebView(fileName: "user_agreement", title: "用户协议")
         }
         .sheet(isPresented: $showPrivacyPolicy) {
-            WebView(url: APIConfig.StaticPages.privacyPolicy, title: "隐私政策", isLocal: true)
+            LocalWebView(fileName: "privacy_policy", title: "隐私政策")
         }
         .onAppear {
-            // 🔥 自动生成昵称
-            if nickname.isEmpty {
-                nickname = generateNickname()
-            }
+            // 🔥 账号由用户手动输入，不再自动生成
+            // 🔥 昵称自动生成为 Y- + 账号前8位（在注册时处理）
             // 加载默认密保问题
             loadDefaultSecurityQuestions()
         }
@@ -345,16 +334,15 @@ struct RegisterView: View {
     
     // 验证是否可以注册
     private var canRegister: Bool {
-        // 账号：8-12位
-        guard username.count >= 8, username.count <= 12 else { return false }
+        // 账号：9-12位
+        guard username.count >= 9, username.count <= 12 else { return false }
         
-        // 昵称：1-50位
-        guard nickname.count >= 1, nickname.count <= 50 else { return false }
+        // 🔥 昵称自动生成，无需验证
         
         // 密码：6-20位
         guard password.count >= 6, password.count <= 20 else { return false }
         
-        // 二级密码：6-20位
+        // 绑定码：6-20位
         guard secondaryPassword.count >= 6, secondaryPassword.count <= 20 else { return false }
         
         // 密保问题和答案不能为空
@@ -396,6 +384,17 @@ struct RegisterView: View {
         let nickname = timePart + randomPart
         print("🎲 自动生成昵称: \(nickname) (时间:\(timePart) + 随机:\(randomPart))")
         return nickname
+    }
+    
+    // 🔥 自动生成 Y 开头的 8 位账号
+    private func generateAutoUsername() -> String {
+        // Y + 7位数字（时间戳后4位 + 随机3位）
+        let nanoseconds = DispatchTime.now().uptimeNanoseconds
+        let timePart = String("\(nanoseconds)".suffix(4))
+        let randomPart = String(format: "%03d", Int.random(in: 0...999))
+        let username = "Y" + timePart + randomPart
+        print("🎲 自动生成账号: \(username)")
+        return username
     }
     
     // 加载默认密保问题
@@ -476,9 +475,54 @@ struct RegisterView: View {
         
         isRegistering = true
         
+        // 先做设备检查，避免"账号已删但设备仍绑定"的死循环
+        Task {
+            do {
+                let checkResult = try await checkDeviceStatus()
+                await MainActor.run {
+                    if checkResult.exists && checkResult.userType == "ios" {
+                        // 设备已绑定 iOS 账号，但用户来这里说明登录失败了
+                        // → 账号被删除但绑定未清，死循环状态
+                        isRegistering = false
+                        showAlert(message: "此设备已绑定的账号已被删除，设备绑定仍存在。\n\n请联系管理员在后台解除此设备绑定后，再重新注册。")
+                        return
+                    }
+                    // 设备未绑定，正常走注册
+                    proceedWithRegister()
+                }
+            } catch {
+                // check-device 失败不阻断，继续注册（后端会兜底）
+                await MainActor.run { proceedWithRegister() }
+            }
+        }
+    }
+    
+    // check-device API
+    private struct CheckDeviceResponse: Decodable {
+        let exists: Bool
+        let userType: String?
+    }
+    
+    private func checkDeviceStatus() async throws -> CheckDeviceResponse {
+        let url = URL(string: "\(APIConfig.shared.baseURL)/api/auth/check-device")!
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(["deviceId": deviceId])
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return try JSONDecoder().decode(CheckDeviceResponse.self, from: data)
+    }
+    
+    // 实际注册逻辑（check-device 通过后调用）
+    private func proceedWithRegister() {
+        // 🔥 直接使用用户输入的账号（9-12位，不加前缀）
+        let finalUsername = username.trimmingCharacters(in: .whitespaces)
+        // 🔥 昵称自动生成为账号前8位
+        let finalNickname = String(finalUsername.prefix(8))
+        
         let requestBody = DeviceRegisterRequest(
-            username: username.trimmingCharacters(in: .whitespaces),
-            nickname: nickname.trimmingCharacters(in: .whitespaces),  // 🔥 新增昵称
+            username: finalUsername,
+            nickname: finalNickname,
             deviceId: deviceId,
             password: password,
             secondaryPassword: secondaryPassword,
@@ -491,7 +535,7 @@ struct RegisterView: View {
         )
         
         print("📝 开始注册设备端用户...")
-        print("   - 账号: \(requestBody.username)")
+        print("   - 账号: \(requestBody.username) (9-12位)")
         print("   - 昵称: \(requestBody.nickname)")
         print("   - 设备ID: \(requestBody.deviceId)")
         
@@ -507,48 +551,47 @@ struct RegisterView: View {
                     // 构建注册结果数据
                     let registerData = RegisterData(
                         username: response.username,
-                        nickname: response.nickname ?? nickname,  // 🔥 新增昵称
+                        nickname: response.nickname ?? String(username.prefix(8)),
                         deviceId: response.deviceId,
                         password: password,
                         secondaryPassword: secondaryPassword,
                         message: response.message
                     )
                     
-                    registerResult = registerData
-                    showSuccessView = true
+                    // 🔥 直接跳转登录界面（不再保存到相册）
+                    backToLoginWithCredentials(registerData)
                     
                 case .failure(let error):
                     print("❌ 注册失败: \(error.localizedDescription)")
-                    showAlert(message: "注册失败：\(error.localizedDescription)")
+                    // ⭐ 死循环修复: 如果后端给出已存在的账号, 引导用户用此账号登录
+                    if let regErr = error as? DeviceRegisterError, regErr.hasRecoveryUser {
+                        recoveryUsername = regErr.existingUsername ?? ""
+                        recoveryNickname = regErr.existingNickname ?? ""
+                        showRecoveryAlert = true
+                        print("🔁 [Recovery] 检测到设备已注册账号: \(recoveryUsername), 弹恢复对话框")
+                    } else {
+                        showAlert(message: "注册失败：\(error.localizedDescription)")
+                    }
                 }
             }
         }
-    }
+    }   // end proceedWithRegister
     
     // 验证输入
     private func validateInput() -> Bool {
-        // 账号验证（8-12位字母或数字）
-        if username.count < 8 || username.count > 12 {
-            showAlert(message: "账号必须是8-12位字母或数字")
+        // 账号验证（9-12位字母或数字）
+        if username.count < 9 || username.count > 12 {
+            showAlert(message: "账号必须是9-12位字母或数字")
             return false
         }
         
-        let usernamePattern = "^[a-zA-Z0-9]{8,12}$"
+        let usernamePattern = "^[a-zA-Z0-9]{9,12}$"
         if username.range(of: usernamePattern, options: .regularExpression) == nil {
             showAlert(message: "账号只能包含字母和数字")
             return false
         }
         
-        // 昵称验证（1-50位）
-        if nickname.isEmpty {
-            showAlert(message: "请填写昵称")
-            return false
-        }
-        
-        if nickname.count > 50 {
-            showAlert(message: "昵称最多50位")
-            return false
-        }
+        // 🔥 昵称自动生成，无需验证
         
         // 密码验证
         if password.count < 6 || password.count > 20 {
@@ -556,9 +599,9 @@ struct RegisterView: View {
             return false
         }
         
-        // 二级密码验证
+        // 绑定码验证
         if secondaryPassword.count < 6 || secondaryPassword.count > 20 {
-            showAlert(message: "二级密码长度必须在6到20位之间")
+            showAlert(message: "绑定码长度必须在6到20位之间")
             return false
         }
         
@@ -603,9 +646,16 @@ struct RegisterView: View {
             guard (200...299).contains(status), let data = data else {
                 // 解析错误信息
                 if let data = data,
-                   let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let errorMsg = errorJson["error"] as? String {
-                    return completion(.failure(NSError(domain: errorMsg, code: status)))
+                   let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let errorMsg = (errorJson["error"] as? String) ?? "HTTP \(status)"
+                    // ⭐ 死循环恢复字段 (后端在 "设备已注册" 错误时会附带)
+                    let existingUser = errorJson["existingUsername"] as? String
+                    let existingNick = errorJson["existingNickname"] as? String
+                    return completion(.failure(DeviceRegisterError(
+                        message: errorMsg,
+                        existingUsername: existingUser,
+                        existingNickname: existingNick
+                    )))
                 }
                 return completion(.failure(NSError(domain: "HTTP \(status)", code: status)))
             }
@@ -630,7 +680,7 @@ struct RegisterView: View {
         昵称：\(data.nickname)
         设备ID：\(data.deviceId)
         登录密码：\(data.password)
-        二级密码：\(data.secondaryPassword)
+        绑定码：\(data.secondaryPassword)
         
         密保问题1：\(question1)
         答案1：\(answer1)
@@ -647,24 +697,20 @@ struct RegisterView: View {
         // 创建图片
         let image = createAccountInfoImage(text: accountInfo)
         
-        // 保存到相册
+        // 保存到相册（静默保存，不显示提示）
         PHPhotoLibrary.requestAuthorization { status in
             if status == .authorized {
                 PHPhotoLibrary.shared().performChanges({
                     PHAssetChangeRequest.creationRequestForAsset(from: image)
                 }) { success, error in
-                    DispatchQueue.main.async {
                         if success {
-                            showAlert(message: "账号信息已保存到相册")
+                        print("✅ 账号信息已自动保存到相册")
                         } else {
-                            showAlert(message: "保存失败：\(error?.localizedDescription ?? "未知错误")")
-                        }
+                        print("⚠️ 保存到相册失败: \(error?.localizedDescription ?? "未知错误")")
                     }
                 }
             } else {
-                DispatchQueue.main.async {
-                    showAlert(message: "需要相册访问权限才能保存")
-                }
+                print("⚠️ 无相册权限，跳过保存")
             }
         }
     }
@@ -744,73 +790,143 @@ struct RegisterSuccessView: View {
     let onBackToLogin: () -> Void
     
     var body: some View {
-        VStack(spacing: 30) {
-            // 成功图标
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.green)
+        ZStack {
+            // 白色背景
+            Color.white.ignoresSafeArea()
             
-            Text("注册成功！")
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.primary)
-            
-            // 账号信息卡片
-            VStack(alignment: .leading, spacing: 15) {
-                Text("您的账号信息")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(.primary)
+            VStack(spacing: 0) {
+                // 顶部安全区域
+                Color.clear.frame(height: 60)
                 
-                VStack(alignment: .leading, spacing: 10) {
+                // 成功图标
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(Color(hex: "4CAF50"))
+                    .padding(.bottom, 16)
+                
+                Text("注册成功")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color(hex: "1A1A1A"))
+                    .padding(.bottom, 24)
+                
+                // 账号信息卡片
+                VStack(alignment: .leading, spacing: 0) {
+                    // 标题
+                    Text("账号信息")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(Color(hex: "1A1A1A"))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    
+                    Divider().background(Color(hex: "EEEEEE"))
+                    
+                    // 账号
                     AccountInfoRow(title: "账号", value: registerData.username)
+                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
+                    
+                    // 昵称
                     AccountInfoRow(title: "昵称", value: registerData.nickname)
-                    AccountInfoRow(title: "设备ID", value: registerData.deviceId)
-                    AccountInfoRow(title: "登录密码", value: registerData.password)
+                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
                     
-                    Text("⚠️ 二级密码已设置，请妥善保管")
-                        .font(.system(size: 12))
-                        .foregroundColor(.orange)
-                        .padding(.top, 5)
-                    
-                    Text("💡 密保问题可用于找回二级密码")
-                        .font(.system(size: 12))
-                        .foregroundColor(.blue)
-                }
-            }
-            .padding(20)
-            .background(Color.gray.opacity(0.05))
-            .cornerRadius(15)
-            .padding(.horizontal, 30)
-            
-            // 操作按钮
-            VStack(spacing: 15) {
-                Button(action: onSaveToAlbum) {
-                    HStack {
-                        Image(systemName: "square.and.arrow.down")
-                        Text("保存完整信息到相册")
+                    // 设备ID（可完整显示）
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("设备ID")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color(hex: "666666"))
+                            Spacer()
+                            Button(action: {
+                                UIPasteboard.general.string = registerData.deviceId
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.system(size: 12))
+                                    Text("复制")
+                                        .font(.system(size: 12))
+                                }
+                                .foregroundColor(Color(hex: "65AEF7"))
+                            }
+                        }
+                        Text(registerData.deviceId)
+                            .font(.system(size: 13, weight: .medium, design: .monospaced))
+                            .foregroundColor(Color(hex: "1A1A1A"))
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundColor(.blue)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(10)
+                    
+                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
+                    
+                    // 登录密码
+                    AccountInfoRow(title: "登录密码", value: registerData.password)
                 }
+                .background(Color(hex: "F4F4F8"))
+                .cornerRadius(12)
+                .padding(.horizontal, 16)
                 
-                Button(action: onBackToLogin) {
-                    Text("返回登录")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
-                        .background(Color.green)
-                        .cornerRadius(12)
+                // 提示信息
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "FF9800"))
+                        Text("绑定码已设置，请妥善保管")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "65AEF7"))
+                        Text("密保问题可用于找回绑定码")
+                            .font(.system(size: 12))
+                            .foregroundColor(Color(hex: "666666"))
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                
+                Spacer()
+                
+                // 操作按钮
+                VStack(spacing: 12) {
+                    Button(action: onSaveToAlbum) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 14))
+                            Text("保存完整信息到相册")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundColor(Color(hex: "65AEF7"))
+                        .frame(width: 200, height: 40)
+                        .background(Color(hex: "65AEF7").opacity(0.1))
+                        .cornerRadius(10)
+                    }
+                    
+                    Button(action: onBackToLogin) {
+                        Text("返回登录")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 160, height: 46)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(hex: "B7F4FC"),
+                                        Color(hex: "93D6F9"),
+                                        Color(hex: "65AEF7")
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .cornerRadius(10)
+                    }
+                }
+                .padding(.bottom, 40)
             }
-            .padding(.horizontal, 30)
-            
-            Spacer()
         }
-        .padding(.top, 50)
     }
 }
 
@@ -822,31 +938,36 @@ struct AccountInfoRow: View {
     
     var body: some View {
         HStack {
-            Text(title + ":")
+            Text(title)
                 .font(.system(size: 14))
-                .foregroundColor(.secondary)
-                .frame(width: 80, alignment: .leading)
+                .foregroundColor(Color(hex: "666666"))
+                .frame(width: 70, alignment: .leading)
             
             Text(value)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundColor(Color(hex: "1A1A1A"))
                 .lineLimit(1)
-                .truncationMode(.middle)
             
             Spacer()
             
             Button(action: {
                 UIPasteboard.general.string = value
             }) {
-                Image(systemName: "doc.on.doc")
-                    .font(.system(size: 12))
-                    .foregroundColor(.blue)
+                HStack(spacing: 4) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 12))
+                    Text("复制")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(Color(hex: "65AEF7"))
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
-// MARK: - 设备ID管理器（持久化，卸载重装不变）
+// MARK: - 设备ID管理器（持久化，卸载重装不变，防移机复制）
 
 class DeviceIDManager {
     // 🔥 使用应用的 Bundle ID 作为 service，确保唯一性
@@ -864,27 +985,33 @@ class DeviceIDManager {
     /// 获取持久化设备ID
     /// 优先从 Keychain 读取（卸载重装后仍然存在）
     /// 如果 Keychain 没有，则生成新的并保存
+    /// 🔥 使用 ThisDeviceOnly 属性，防止数据移机复制
     func getDeviceID() -> String {
         // 如果有缓存，直接返回
         if let cached = cachedDeviceID {
             return cached
         }
         
-        // 🔥 优先从 Keychain 读取（卸载重装后仍然存在）
+        // 🔥 Step 1: 尝试读取已有数据（兼容旧版本）
         if let existingID = getFromKeychain() {
             print("📱 [DeviceID] 从 Keychain 读取已有设备ID: \(existingID.prefix(8))...")
+            
+            // 🔥 Step 2: 属性升级 —— 将旧的 AfterFirstUnlock 升级为 ThisDeviceOnly
+            // 这样老用户的设备ID不变，但属性变为不可迁移
+            upgradeToThisDeviceOnly(existingID)
+            
             cachedDeviceID = existingID
             return existingID
         }
         
-        // 🔥 Keychain 没有，生成新的UUID并保存
+        // 🔥 Step 3: Keychain 没有，生成新的UUID并保存（直接用 ThisDeviceOnly）
         let newID = generateUniqueID()
         if saveToKeychain(newID) {
-            print("📱 [DeviceID] 生成新设备ID并保存到 Keychain: \(newID.prefix(8))...")
+            print("📱 [DeviceID] 生成新设备ID并保存到 Keychain (ThisDeviceOnly): \(newID.prefix(8))...")
             cachedDeviceID = newID
-        return newID
-    }
-    
+            return newID
+        }
+        
         // 保存失败时的降级方案：使用 IDFV
         print("⚠️ [DeviceID] Keychain 保存失败，降级使用 IDFV")
         let fallbackID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
@@ -904,7 +1031,54 @@ class DeviceIDManager {
         return combined.sha256Hash().prefix(32).uppercased()
     }
     
-    /// 保存到 Keychain
+    // MARK: - Keychain 操作
+    
+    /// 🔥 属性升级：将旧的 AfterFirstUnlock 数据升级为 ThisDeviceOnly
+    /// 老用户设备ID不变，只是更新 Keychain 存储属性为不可迁移
+    private func upgradeToThisDeviceOnly(_ value: String) {
+        // 读取当前项的属性
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnAttributes as String: true
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess,
+              let attrs = result as? [String: Any],
+              let accessible = attrs[kSecAttrAccessible as String] as? String else {
+            return
+        }
+        
+        // 🔥 检查是否已经是 ThisDeviceOnly
+        let thisDeviceOnlyValue = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String
+        if accessible == thisDeviceOnlyValue {
+            // 已经是 ThisDeviceOnly，无需升级
+            return
+        }
+        
+        // 🔥 需要升级：删除旧的 → 用 ThisDeviceOnly 重新保存
+        print("🔄 [DeviceID] 属性升级: AfterFirstUnlock → ThisDeviceOnly (防移机)")
+        
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        
+        // 用 ThisDeviceOnly 重新保存（设备ID值不变）
+        if saveToKeychain(value) {
+            print("✅ [DeviceID] 属性升级成功，设备ID不变: \(value.prefix(8))...")
+        } else {
+            print("❌ [DeviceID] 属性升级失败，下次启动会重试")
+        }
+    }
+    
+    /// 保存到 Keychain（使用 ThisDeviceOnly 属性，防止移机复制）
     @discardableResult
     private func saveToKeychain(_ value: String) -> Bool {
         guard let data = value.data(using: .utf8) else { return false }
@@ -923,15 +1097,16 @@ class DeviceIDManager {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            // 🔥 关键：设置为 kSecAttrAccessibleAfterFirstUnlock
-            // 设备首次解锁后始终可访问，即使应用被卸载重装
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
+            // 🔥🔥 关键改动：使用 ThisDeviceOnly 属性
+            // ❌ 旧: kSecAttrAccessibleAfterFirstUnlock（会被 iCloud/iTunes 备份迁移）
+            // ✅ 新: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly（绑定当前设备硬件，不可迁移）
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
         
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         
         if status == errSecSuccess {
-            print("✅ [DeviceID] Keychain 保存成功")
+            print("✅ [DeviceID] Keychain 保存成功 (ThisDeviceOnly, 防移机)")
             return true
         } else {
             print("❌ [DeviceID] Keychain 保存失败: \(status)")

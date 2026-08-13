@@ -41,13 +41,9 @@ struct ActivationView: View {
                 } else {
                     // 原有内容
                     ZStack {
-                        // 背景渐变
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        .ignoresSafeArea()
+                        // 背景 - 白色
+                        Color.white
+                            .ignoresSafeArea()
                         
                         if isLoading {
                             // 加载中
@@ -55,8 +51,8 @@ struct ActivationView: View {
                                 ProgressView()
                                     .scaleEffect(1.5)
                                 Text("正在获取激活状态...")
-                                    .font(.subheadline)
-                                    .foregroundColor(.gray)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(Color(hex: "808080"))
                             }
                         } else if isActivated {
                             // 已激活 - 显示激活详情
@@ -70,7 +66,7 @@ struct ActivationView: View {
             }
             .navigationTitle(showScanner ? "扫码激活" : "")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
                         if showScanner {
@@ -80,12 +76,12 @@ struct ActivationView: View {
                             dismiss()
                         }
                     }) {
-                        Image(systemName: showScanner ? "chevron.left" : "xmark")
+                        Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(showScanner ? .white : .gray)
+                            .foregroundColor(showScanner ? .white : Color(hex: "1A1A1A"))
                     }
                 }
-            }
+            })
         }
         .alert(alertTitle, isPresented: $showAlert) {
             Button("确定") {
@@ -104,6 +100,14 @@ struct ActivationView: View {
             UIDevice.current.setValue(UIInterfaceOrientation.portrait.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
             
+            // 设置导航栏为白色背景
+            let appearance = UINavigationBarAppearance()
+            appearance.configureWithOpaqueBackground()
+            appearance.backgroundColor = .white
+            appearance.titleTextAttributes = [.foregroundColor: UIColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)]
+            UINavigationBar.appearance().standardAppearance = appearance
+            UINavigationBar.appearance().scrollEdgeAppearance = appearance
+            
             // 获取激活状态
             fetchActivationStatus()
             
@@ -114,6 +118,21 @@ struct ActivationView: View {
                 }
             }
         }
+        .onChange(of: showScanner, perform: { isScanning in
+            // 根据界面切换导航栏样式
+            let appearance = UINavigationBarAppearance()
+            if isScanning {
+                appearance.configureWithTransparentBackground()
+                appearance.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+                appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
+            } else {
+                appearance.configureWithOpaqueBackground()
+                appearance.backgroundColor = .white
+                appearance.titleTextAttributes = [.foregroundColor: UIColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)]
+            }
+            UINavigationBar.appearance().standardAppearance = appearance
+            UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        })
     }
     
     // MARK: - 扫码界面
@@ -135,121 +154,136 @@ struct ActivationView: View {
         )
     }
     
-    // MARK: - 已激活详情视图
+    // MARK: - 已激活详情视图（灰白配风格）
     private var activatedDetailView: some View {
-        VStack(spacing: 30) {
-            Spacer()
+        VStack(spacing: 0) {
+            // 顶部间距
+            Color.clear.frame(height: 30)
             
-            // 图标
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 80))
-                .foregroundColor(activationLevel == 2 ? .orange : .gray)
-            
-            // 标题
-            VStack(spacing: 8) {
+            // 图标区域
+            VStack(spacing: 12) {
+                Image(systemName: "checkmark.seal")
+                    .font(.system(size: 40))
+                    .foregroundColor(activationLevel == 2 ? .orange : .primary)
+                
                 Text("已激活")
-                    .font(.title)
-                    .fontWeight(.bold)
-                    .foregroundColor(.green)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color(hex: "1A1A1A"))
                 
                 Text(activationLevelName)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(activationLevel == 2 ? .orange : .gray)
+                    .font(.system(size: 14))
+                    .foregroundColor(activationLevel == 2 ? .orange : Color(hex: "808080"))
             }
+            .padding(.bottom, 30)
             
             // 激活详情卡片
-            VStack(spacing: 16) {
+            VStack(spacing: 0) {
                 // 等级
                 HStack {
-                    Image(systemName: "star.fill")
-                        .foregroundColor(activationLevel == 2 ? .orange : .gray)
+                    Image(systemName: "star")
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary)
+                        .frame(width: 24)
                     Text("会员等级")
-                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "808080"))
                     Spacer()
                     Text(activationLevelName)
-                        .fontWeight(.medium)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color(hex: "1A1A1A"))
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
                 
-                Divider()
+                Divider().padding(.leading, 56)
                 
                 // 到期时间
                 HStack {
                     Image(systemName: "calendar")
-                        .foregroundColor(.blue)
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary)
+                        .frame(width: 24)
                     Text("到期时间")
-                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "808080"))
                     Spacer()
                     Text(formatExpireDate(activationExpireAt))
-                        .fontWeight(.medium)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Color(hex: "1A1A1A"))
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
                 
-                Divider()
+                Divider().padding(.leading, 56)
                 
-                // 可用画质
-                HStack(alignment: .top) {
-                    Image(systemName: "video.fill")
-                        .foregroundColor(.purple)
+                // 可用画质 - 行显示
+                HStack {
+                    Image(systemName: "video")
+                        .font(.system(size: 16))
+                        .foregroundColor(.primary)
+                        .frame(width: 24)
                     Text("可用画质")
-                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "808080"))
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 4) {
+                    // 行显示画质标签
+                    HStack(spacing: 8) {
                         ForEach(qualityAccess, id: \.self) { quality in
                             Text(quality)
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.blue.opacity(0.1))
+                                .background(Color(hex: "F4F4F8"))
+                                .foregroundColor(Color(hex: "1A1A1A"))
                                 .cornerRadius(6)
                         }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
             }
-            .padding(20)
-            .background(Color.white)
-            .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
-            .padding(.horizontal, 30)
+            .background(Color(hex: "F4F4F8"))
+            .cornerRadius(12)
+            .padding(.horizontal, 16)
             
             Spacer()
             
             // 提示
-            VStack(spacing: 4) {
-                Text("如需续费或升级，请联系代理商")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray)
-            }
-            .padding(.bottom, 30)
+            Text("如需续费或升级，请联系代理商")
+                .font(.system(size: 12))
+                .foregroundColor(Color(hex: "808080"))
+                .padding(.bottom, 30)
         }
     }
     
-    // MARK: - 激活码输入视图
+    // MARK: - 激活码输入视图（灰白配风格）
     private var activationInputView: some View {
-        VStack(spacing: 30) {
-            Spacer()
+        VStack(spacing: 0) {
+            // 顶部间距
+            Color.clear.frame(height: 30)
             
-            // 图标
-            Image(systemName: "key.fill")
-                .font(.system(size: 80))
-                .foregroundColor(.blue)
-            
-            // 标题
-            VStack(spacing: 8) {
+            // 图标区域
+            VStack(spacing: 12) {
+                Image(systemName: "key")
+                    .font(.system(size: 40))
+                    .foregroundColor(.primary)
+                
                 Text("会员激活")
-                    .font(.title)
-                    .fontWeight(.bold)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color(hex: "1A1A1A"))
                 
                 Text("输入激活码解锁全部功能")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
             }
+            .padding(.bottom, 30)
             
-            // 激活码输入框
-            VStack(alignment: .leading, spacing: 8) {
+            // 激活码输入区域
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("激活码")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.gray)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "808080"))
                     
                     Spacer()
                     
@@ -266,81 +300,96 @@ struct ActivationView: View {
                                 .font(.system(size: 14))
                         }
                         .foregroundColor(.blue)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.1))
-                        .cornerRadius(8)
                     }
                 }
                 
                 TextField("请输入激活码 (XXXX-XXXX-XXXX-XXXX)", text: $activationCode)
                     .textFieldStyle(PlainTextFieldStyle())
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(12)
-                    .font(.system(size: 16))
+                    .padding(.vertical, 14)
+                    .background(Color(hex: "F4F4F8"))
+                    .cornerRadius(10)
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "1A1A1A"))
                     .autocapitalization(.allCharacters)
                     .disableAutocorrection(true)
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 16)
+            
+            Spacer().frame(height: 30)
             
             // 激活按钮
             Button(action: {
                 activateMembership()
             }) {
-                HStack {
-                    if isActivating {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
-                    }
-                    Text(isActivating ? "激活中..." : "立即激活")
+                if isActivating {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "FAFAFA")))
+                        .frame(width: 160, height: 46)
+                } else {
+                    Text("立即激活")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color(hex: "FAFAFA"))
+                        .frame(width: 160, height: 46)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(isActivating || activationCode.isEmpty ? Color.gray : Color.blue)
-                .cornerRadius(12)
             }
+            .background(isActivating || activationCode.isEmpty ? Color(hex: "CCCCCC") : Color.blue)
+            .cornerRadius(10)
             .disabled(isActivating || activationCode.isEmpty)
-            .padding(.horizontal, 30)
+            
+            Spacer().frame(height: 30)
             
             // 等级说明
             VStack(alignment: .leading, spacing: 12) {
                 Text("会员等级说明")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.gray)
+                    .font(.system(size: 14))
+                    .foregroundColor(Color(hex: "808080"))
                 
-                VStack(spacing: 8) {
+                // ⭐ 2026-07-31 统一命名：产品口径 4 等级 5 档位（等级1对应超低网+高清两个档位）。
+                //   原"白银/黄金会员"文案是陈年占位，与实际等级体系完全对不上。
+                VStack(spacing: 0) {
                     LevelInfoRow(
-                        level: "白银会员",
-                        description: "标清、高清画质",
-                        color: .gray
+                        level: "高清会员",
+                        description: "超低网、高清档位",
+                        color: .green
                     )
                     
+                    Divider().padding(.leading, 24)
+                    
                     LevelInfoRow(
-                        level: "黄金会员",
-                        description: "标清、高清、超清、4K画质",
+                        level: "超清会员",
+                        description: "超低网、高清、超清档位",
+                        color: .blue
+                    )
+                    
+                    Divider().padding(.leading, 24)
+                    
+                    LevelInfoRow(
+                        level: "超高清会员",
+                        description: "超低网、高清、超清、超高清档位",
+                        color: .yellow
+                    )
+                    
+                    Divider().padding(.leading, 24)
+                    
+                    LevelInfoRow(
+                        level: "超高帧会员",
+                        description: "全部档位（含超高帧）",
                         color: .orange
                     )
                 }
-                .padding()
-                .background(Color.white.opacity(0.8))
+                .background(Color(hex: "F4F4F8"))
                 .cornerRadius(12)
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 16)
             
             Spacer()
             
             // 联系客服
-            VStack(spacing: 4) {
-                Text("如需获取激活码，请联系代理商")
-                    .font(.system(size: 12))
-                    .foregroundColor(.gray)
-            }
-            .padding(.bottom, 30)
+            Text("如需获取激活码，请联系代理商")
+                .font(.system(size: 12))
+                .foregroundColor(Color(hex: "808080"))
+                .padding(.bottom, 30)
         }
     }
     
@@ -401,12 +450,13 @@ struct ActivationView: View {
                     UserDefaults.standard.set(response.levelName, forKey: "activation_level_name")
                     UserDefaults.standard.set(response.expireAt, forKey: "activation_expire_at")
                     
-                    // 根据等级设置可用画质
-                    if response.level == 1 {
-                        UserDefaults.standard.set(["标清", "高清"], forKey: "quality_access")
-                    } else if response.level == 2 {
-                        UserDefaults.standard.set(["标清", "高清", "超清", "4K"], forKey: "quality_access")
-                    }
+                    // ⭐ 2026-07-31 统一命名：按产品口径生成可用档位（等级1=超低网+高清两个档位）。
+                    //   原来只写了等级1/2且用的是错位老命名（含"超高帧"错挂在等级2上）。
+                    var access = ["超低网", "高清"]
+                    if response.level >= 2 { access.append("超清") }
+                    if response.level >= 3 { access.append("超高清") }
+                    if response.level >= 4 { access.append("超高帧") }
+                    UserDefaults.standard.set(access, forKey: "quality_access")
                     
                     print("✅ 激活成功: level=\(response.level), levelName=\(response.levelName)")
                     
@@ -476,7 +526,7 @@ struct ActivationView: View {
     }
 }
 
-// MARK: - 等级信息行
+// MARK: - 等级信息行（灰白配风格）
 struct LevelInfoRow: View {
     let level: String
     let description: String
@@ -490,18 +540,21 @@ struct LevelInfoRow: View {
             
             Text(level)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundColor(Color(hex: "1A1A1A"))
             
             Spacer()
             
             Text(description)
                 .font(.system(size: 12))
-                .foregroundColor(.gray)
+                .foregroundColor(Color(hex: "808080"))
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.white)
     }
 }
 
-// MARK: - 激活码扫描内容视图
+// MARK: - 激活码扫描内容视图（全屏 + X关闭按钮）
 struct ActivationScannerContentView: View {
     let onCodeScanned: (String) -> Void
     let onCancel: () -> Void
@@ -533,14 +586,49 @@ struct ActivationScannerContentView: View {
                     scanBoxSize: scanBoxSize
                 )
                 .ignoresSafeArea()
+                
+                // 顶部导航栏 - 标题和关闭按钮
+                VStack {
+                    HStack {
+                        // X 关闭按钮
+                        Button(action: {
+                            onCancel()
+                        }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                        }
+                        .padding(.leading, 8)
+                        
+                        Spacer()
+                        
+                        // 标题
+                        Text("扫码激活")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        // 占位，保持标题居中
+                        Color.clear.frame(width: 44, height: 44)
+                            .padding(.trailing, 8)
+                    }
+                    .frame(height: 44)
+                    .padding(.top, geometry.safeAreaInsets.top)
+                    .background(Color.black.opacity(0.6))
+                    
+                    Spacer()
+                }
+                .ignoresSafeArea(.all, edges: .top)
             }
         }
         .background(Color.black)
-        .onChange(of: scannedCode) { newValue in
+        .onChange(of: scannedCode, perform: { newValue in
             if !newValue.isEmpty {
                 handleScanResult(newValue)
             }
-        }
+        })
         .alert("扫描错误", isPresented: $showError) {
             Button("确定") {
                 isScanning = true

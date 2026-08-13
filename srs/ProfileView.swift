@@ -96,9 +96,14 @@ struct ProfileView: View {
    @State private var isDeletingAccount = false
    @State private var deleteAccountError: String? = nil
    @State private var showDeleteAccountError = false
+   @State private var deleteAccountPassword: String = ""  // 🔥 注销账号需要输入的绑定码
     
     // 添加关于我们WebView状态变量
    @State private var showingAboutUs = false
+   
+   // 问题反馈页面状态变量
+   // coco/aihj：问题反馈入口已移除（showingMessage 状态删除）
+   
     
    // 添加设备绑定相关的状态变量
    @State private var showingQRScanner = false
@@ -108,6 +113,14 @@ struct ProfileView: View {
    // 🔥 激活会员相关
    @State private var showingActivation = false
    @State private var startWithScanner = false  // 是否直接进入扫码模式
+
+   // coco/aihj：§60 剩余天数 / PC 下载入口已移除（后端无对应接口，对齐老 iOS）
+
+    private var appVersionText: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
     
     var body: some View {
         NavigationView {
@@ -122,9 +135,9 @@ struct ProfileView: View {
         } message: {
             Text(viewModel.errorMessage ?? "未知错误")
         }
-        .onChange(of: viewModel.errorMessage) { errorMessage in
+        .onChange(of: viewModel.errorMessage, perform: { errorMessage in
             showingAlert = errorMessage != nil
-        }
+        })
         .actionSheet(isPresented: $showingActionSheet) {
             avatarActionSheet
         }
@@ -134,37 +147,43 @@ struct ProfileView: View {
         .sheet(isPresented: $showingCamera) {
             ImagePicker(selectedImage: $selectedImage, sourceType: .camera)
         }
-        .onChange(of: selectedImage) { image in
+        .onChange(of: selectedImage, perform: { image in
             if let image = image {
                 viewModel.uploadAvatar(image)
                 selectedImage = nil
             }
-        }
-        .sheet(isPresented: $showingChangePassword) {
-            ChangePasswordView()
+        })
+        .fullScreenCover(isPresented: $showingChangePassword) {
+            ChangePasswordView(onPasswordChangeSuccess: {
+                // 🔥 修改密码成功后的完整退出流程
+                handleLogoutAfterPasswordChange()
+            })
+            .environmentObject(appState)
         }
         .alert("注销账号", isPresented: $showingDeleteAccountConfirm) {
-            Button("取消", role: .cancel) { }
+            // 🔥 绑定码输入框
+            SecureField("请输入绑定码", text: $deleteAccountPassword)
+            
+            Button("取消", role: .cancel) {
+                deleteAccountPassword = ""  // 清空密码
+            }
             Button("确认注销", role: .destructive) {
                 performDeleteAccount()
             }
         } message: {
-            Text("注销后账号将无法恢复，所有数据将被删除。确定要注销吗？")
+            Text("注销后账号将无法恢复，所有数据将被删除。请输入绑定码确认注销。")
             }
         .alert("注销失败", isPresented: $showDeleteAccountError) {
             Button("确定") { }
         } message: {
             Text(deleteAccountError ?? "未知错误")
         }
-        .sheet(isPresented: $showingAboutUs) {
-            WebView(
-                url: APIConfig.StaticPages.privacyPolicy,
-                title: "关于我们",
-                isLocal: true
-            )
+        .fullScreenCover(isPresented: $showingAboutUs) {
+            LocalWebView(fileName: "privacy_policy", title: "隐私政策")
         }
-        // 添加二维码扫描的sheet（🔥 扫码和确认在同一个页面内完成）
-        .sheet(isPresented: $showingQRScanner) {
+        // coco/aihj：问题反馈页入口已移除（MessageView 保留在工程内但不可达）
+        // 添加二维码扫描（全屏显示）
+        .fullScreenCover(isPresented: $showingQRScanner) {
             DeviceBindingQRScannerView(
                 deviceUsername: viewModel.userProfile?.username ?? "",
                 onBindingSuccess: { message in
@@ -172,8 +191,8 @@ struct ProfileView: View {
                 }
             )
         }
-        // 已绑定列表
-        .sheet(isPresented: $showingBindingList) {
+        // 已绑定列表（全屏显示）
+        .fullScreenCover(isPresented: $showingBindingList) {
             BindingListView()
         }
         // 绑定成功提示
@@ -187,8 +206,8 @@ struct ProfileView: View {
         } message: {
             Text(bindingSuccessMessage ?? "")
         }
-        // 🔥 激活会员页面（竖屏）
-        .sheet(isPresented: $showingActivation, onDismiss: {
+        // 🔥 激活会员页面（全屏竖屏）
+        .fullScreenCover(isPresented: $showingActivation, onDismiss: {
             // 重置扫码模式
             startWithScanner = false
         }) {
@@ -253,11 +272,20 @@ struct ProfileView: View {
     
     // 🔥 执行注销账号
     private func performDeleteAccount() {
+        // 🔥 验证绑定码不能为空
+        guard !deleteAccountPassword.isEmpty else {
+            deleteAccountError = "请输入绑定码"
+            showDeleteAccountError = true
+            return
+        }
+        
+        let password = deleteAccountPassword
+        deleteAccountPassword = ""  // 清空密码
         isDeletingAccount = true
            
            Task {
                do {
-                let response = try await APIService.shared.deleteAccount()
+                let response = try await APIService.shared.deleteAccount(secondaryPassword: password)
                    
                    await MainActor.run {
                     isDeletingAccount = false
@@ -322,6 +350,7 @@ struct ProfileView: View {
         showingAboutUs = true
     }
     
+    
     // 返回按钮处理
     private func handleBackAction() {
         print("📱 从个人中心返回")
@@ -358,6 +387,31 @@ struct ProfileView: View {
         appState.navigateToMonitorLogin()
     }
     
+    // 🔥 修改密码成功后的完整退出流程
+    private func handleLogoutAfterPasswordChange() {
+        print("🔐 [ProfileView] 密码修改成功，执行完整退出流程")
+        
+        Task { @MainActor in
+            // 1. 发送通知让ContentView停止推流
+            print("📢 发送停止推流通知")
+            NotificationCenter.default.post(name: NSNotification.Name("StopPublishBeforeLogout"), object: nil)
+            
+            // 2. 断开WebSocket
+            print("🔌 断开WebSocket连接")
+            WebSocketManager.shared.disconnect()
+            
+            // 3. 清理登录信息
+            UserDefaults.standard.set("", forKey: "jwt_token")
+            UserDefaults.standard.set("", forKey: "permanent_token")
+            
+            // 4. 延迟一下，等待推流停止
+            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+            
+            // 5. 关闭ProfileView并导航回登录页
+            callBack()
+        }
+    }
+    
     // MARK: - 提取的子视图（减少编译器类型检查复杂度）
     
     private var mainContentView: some View {
@@ -371,36 +425,34 @@ struct ProfileView: View {
         .navigationTitle("个人中心")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
-        .toolbar {
+        .toolbar(content: {
             ToolbarItem(placement: .navigationBarLeading) {
                 backButton
             }
-        }
+        })
         .overlay(loadingOverlay)
     }
     
     private var headerView: some View {
-        VStack(spacing: 16) {
-            avatarButton
-            userInfoView
+        HStack(alignment: .center, spacing: 12) {
+            // 头像（可点击，打开相册选择）
+            Button(action: { showingActionSheet = true }) {
+                avatarContent
+            }
+            .disabled(viewModel.isUploadingAvatar)
+            
+            // 昵称
+            VStack(alignment: .leading, spacing: 6) {
+                Text(viewModel.userProfile?.nickname ?? viewModel.userProfile?.username ?? "--")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(Color(hex: "1A1A1A"))
+            }
+            
+            Spacer()
         }
-        .padding(.top, 20)
-        .padding(.bottom, 30)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.clear]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-    }
-    
-    private var avatarButton: some View {
-        Button(action: { showingActionSheet = true }) {
-            avatarContent
-        }
-        .disabled(viewModel.isUploadingAvatar)
+        .padding(.horizontal, 16)
+        .padding(.top, 25)
+        .padding(.bottom, 20)
     }
     
     private var avatarContent: some View {
@@ -409,58 +461,100 @@ struct ProfileView: View {
                 image.resizable().aspectRatio(contentMode: .fill)
             } placeholder: {
                 Image(systemName: "person.circle.fill")
-                    .font(.system(size: 80))
+                    .font(.system(size: 60))
                     .foregroundColor(.gray)
             }
-            .frame(width: 80, height: 80)
+            .frame(width: 60, height: 60)
             .clipShape(Circle())
-            .overlay(Circle().stroke(Color.white, lineWidth: 3))
-            .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
             
             if viewModel.isUploadingAvatar {
-                Circle().fill(Color.black.opacity(0.5)).frame(width: 80, height: 80)
-                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.2)
-            }
-            
-            if !viewModel.isUploadingAvatar {
-                cameraIconOverlay
+                Circle().fill(Color.black.opacity(0.5)).frame(width: 60, height: 60)
+                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .white)).scaleEffect(1.0)
             }
         }
     }
     
-    private var cameraIconOverlay: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white)
-                    .padding(4)
-                    .background(Color.blue)
-                    .clipShape(Circle())
-                    .offset(x: -5, y: -5)
-            }
+    // 🔥 等级显示文本
+    // ⭐⭐ 2026-08-01 用户拍板【故意对调，勿"修复"】：等级4 对外显示「超高清」、等级3 对外显示「超高帧」。
+    //   与总后台/后端的内部命名（3=超高清 4=超高帧）刻意不同——这是产品对外展示口径，
+    //   顶级档（等级4）对客户叫"超高清"。主页档位仅调换了显示位置（名称未动），与此处互不影响。
+    private var levelDisplayText: String {
+        let activated = UserDefaults.standard.bool(forKey: "activated")
+        let level = UserDefaults.standard.integer(forKey: "activation_level")
+
+        print("🏷️ [等级调试] activated=\(activated), level=\(level)")
+
+        if !activated {
+            return "试用用户"
+        }
+
+        switch level {
+        case 4: return "超高清"   // ⭐ 故意：等级4 对外显示超高清（内部命名是超高帧）
+        case 3: return "超高帧"   // ⭐ 故意：等级3 对外显示超高帧（内部命名是超高清）
+        case 2: return "超清"
+        case 1: return "高清"
+        default: return "试用用户"
         }
     }
     
-    private var userInfoView: some View {
-        VStack(spacing: 4) {
-            Text(viewModel.userProfile?.nickname ?? viewModel.userProfile?.username ?? "--")
-                .font(.title2)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-            
-            Text("账号：\(viewModel.userProfile?.username ?? "未知")")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+    // 🔥 等级图标
+    // 1=高清, 2=超清, 3=超高清, 4=超高帧
+    private var levelIcon: String {
+        let level = UserDefaults.standard.integer(forKey: "activation_level")
+        switch level {
+        case 4: return "bolt.fill"       // 超高帧
+        case 3: return "crown.fill"      // 超高清
+        case 2: return "star.fill"       // 超清
+        case 1: return "play.fill"       // 高清
+        default: return "person.fill"    // 试用
         }
     }
     
+    // 🔥 等级颜色
+    // 1=高清, 2=超清, 3=超高清, 4=超高帧
+    private var levelColor: Color {
+        let level = UserDefaults.standard.integer(forKey: "activation_level")
+        let activated = UserDefaults.standard.bool(forKey: "activated")
+
+        if !activated {
+            return Color(hex: "808080")  // 试用：灰色
+        }
+
+        switch level {
+        case 4: return Color(hex: "FF6B00")  // 超高帧：橙色
+        case 3: return Color(hex: "FFD700")  // 超高清：金色
+        case 2: return Color(hex: "007AFF")  // 超清：蓝色
+        case 1: return Color(hex: "34C759")  // 高清：绿色
+        default: return Color(hex: "808080") // 默认：灰色
+        }
+    }
+    
+    // MARK: - ⭐ §53.9「我的」页首行：未开通=注册时间 / 已开通=<等级>会员 + 开通时间
+    //
+    // 等级命名以总后台「会员管理」为准（1=高清 2=超清 3=超高清 4=超高帧），
+    // 与 levelDisplayText 同一套口径。**不用后端 activationLevelName**——那个给的是
+    // 「标清/高清/超清/4K」的老命名，与产品/PC/档位口径不一致（后端 DeviceBindingService 里也标注了这点）。
+    private var isMemberActivated: Bool {
+        UserDefaults.standard.bool(forKey: "activated")
+    }
+    /// ⭐ §53.15：等级名**不带"会员"二字**（超高清会员 → 超高清），只显示等级本身。
+    private var membershipRowTitle: String {
+        isMemberActivated ? levelDisplayText : "注册时间"
+    }
+    /// ⭐ §53.15：已开通时副标题是「注册成功时间 <注册日期>」。
+    ///   **刻意不显示"开通时间"**：App Store 审核对"开通/付费"类信息敏感，这里只呈现账号注册时间，
+    ///   不暴露任何与购买/激活时点相关的内容。未开通时保持原样（纯注册时间）。
+    private var membershipRowSubtitle: String {
+        let created = formatDate(viewModel.userProfile?.createdAt)
+        return isMemberActivated ? "注册成功时间 " + created : created
+    }
+    private var membershipRowIcon: String {
+        isMemberActivated ? levelIcon : "clock"
+    }
+
     private var settingsListView: some View {
         VStack(spacing: 0) {
             settingsSection1
-            settingsSeparator
             settingsSection2
             logoutButton
         }
@@ -469,18 +563,29 @@ struct ProfileView: View {
     
     private var settingsSection1: some View {
         VStack(spacing: 0) {
-            ProfileRowView(icon: "clock", title: "注册时间", subtitle: formatDate(viewModel.userProfile?.createdAt), showArrow: true) {
+            // ⭐ §53.9 / §53.15：开通会员后这一行显示「<等级> + 注册成功时间」（等级名不带"会员"
+            //   二字，且**不显示开通时间**——审核对付费/开通信息敏感）；未开通时保持「注册时间」原样。
+            ProfileRowView(icon: membershipRowIcon,
+                           title: membershipRowTitle,
+                           subtitle: membershipRowSubtitle,
+                           showArrow: true) {
                 handleRegistrationTimeAction()
             }
             Divider().padding(.leading, 60)
             
-            ProfileRowView(icon: "link.circle", title: "设备绑定", subtitle: "扫描控制端二维码进行绑定", showArrow: true) {
-                handleDeviceBindingAction()
-            }
-            Divider().padding(.leading, 60)
+            // coco/aihj：§60 剩余天数行已移除（后端无对应接口）
             
-            ProfileRowView(icon: "list.bullet.circle", title: "已绑定列表", subtitle: "查看和管理已绑定的控制端", showArrow: true) {
-                showingBindingList = true
+            // 🔥 到期时间（已隐藏）
+            // if isActivated {
+            //     ProfileRowView(icon: "calendar.badge.clock", title: "到期时间", subtitle: formatExpireDate(), showArrow: false) {
+            //         // 无操作
+            //     }
+            //     Divider().padding(.leading, 60)
+            // }
+            
+            // 🔥 扫一扫（扫码绑定设备）
+            ProfileRowView(icon: "qrcode.viewfinder", title: "扫一扫", subtitle: "扫描控制端二维码进行绑定", showArrow: true) {
+                handleDeviceBindingAction()
             }
             Divider().padding(.leading, 60)
             
@@ -489,13 +594,49 @@ struct ProfileView: View {
             }
             Divider().padding(.leading, 60)
             
-            // activationRowView  // 🔥 审核隐藏
-            // Divider().padding(.leading, 60)
-            
             ProfileRowView(icon: "person.badge.minus", title: "注销账号", showArrow: true) {
                 handleDeleteAccountAction()
             }
+            Divider().padding(.leading, 60)
         }
+    }
+    
+    // 🔥 是否已激活会员
+    private var isActivated: Bool {
+        return UserDefaults.standard.bool(forKey: "activated")
+    }
+    
+    // 🔥 格式化到期时间
+    private func formatExpireDate() -> String {
+        guard let expireAt = UserDefaults.standard.string(forKey: "activation_expire_at"),
+              !expireAt.isEmpty else {
+            return "未知"
+        }
+        
+        let formatter = DateFormatter()
+        // 尝试解析 ISO8601 格式
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+        
+        if let date = formatter.date(from: expireAt) {
+            formatter.dateFormat = "yyyy年MM月dd日"
+            return formatter.string(from: date)
+        }
+        
+        // 尝试不带毫秒的格式
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        if let date = formatter.date(from: expireAt) {
+            formatter.dateFormat = "yyyy年MM月dd日"
+            return formatter.string(from: date)
+        }
+        
+        // 尝试只有日期的格式
+        formatter.dateFormat = "yyyy-MM-dd"
+        if let date = formatter.date(from: expireAt) {
+            formatter.dateFormat = "yyyy年MM月dd日"
+            return formatter.string(from: date)
+        }
+        
+        return expireAt
     }
     
     private var settingsSeparator: some View {
@@ -507,7 +648,7 @@ struct ProfileView: View {
     
     private var settingsSection2: some View {
         VStack(spacing: 0) {
-            ProfileRowView(icon: "info.circle", title: "版本号", subtitle: "v1.1", showArrow: true) {
+            ProfileRowView(icon: "info.circle", title: "版本号", subtitle: appVersionText, showArrow: true) {
                 handleVersionInfoAction()
             }
             Divider().padding(.leading, 60)
@@ -515,35 +656,31 @@ struct ProfileView: View {
             ProfileRowView(icon: "questionmark.circle", title: "关于我们", showArrow: true) {
                 handleAboutUsAction()
             }
+            Divider().padding(.leading, 60)
+            
+            // coco/aihj：问题反馈（/message/*）、§60 PC 下载入口已移除（后端无对应接口，对齐老 iOS）
         }
     }
     
     private var logoutButton: some View {
         Button(action: handleLogoutAction) {
             Text("退出")
-                .font(.headline)
-                .fontWeight(.medium)
-                .foregroundColor(.red)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.red.opacity(0.3), lineWidth: 1)
-                )
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(Color(hex: "FAFAFA"))
+                .frame(width: 160, height: 46)
+                .background(Color(hex: "CCCCCC"))
+                .cornerRadius(10)
         }
-        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity)
         .padding(.top, 30)
         .padding(.bottom, 40)
     }
     
     private var backButton: some View {
         Button(action: { handleBackAction() }) {
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left").font(.system(size: 16, weight: .medium))
-                Text("返回").font(.system(size: 16))
-            }
-            .foregroundColor(.blue)
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(Color(hex: "1A1A1A"))
         }
     }
     
@@ -575,7 +712,7 @@ struct ProfileView: View {
             // 图标
             Image(systemName: "key.fill")
                 .font(.system(size: 20))
-                .foregroundColor(.blue)
+                .foregroundColor(.primary)
                 .frame(width: 24, height: 24)
             
             // 标题和副标题
@@ -599,9 +736,9 @@ struct ProfileView: View {
             }) {
                 Image(systemName: "qrcode.viewfinder")
                     .font(.system(size: 20))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.primary)
                     .padding(8)
-                    .background(Color.blue.opacity(0.1))
+                    .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
             }
             
@@ -625,7 +762,7 @@ struct ProfileView: View {
         let levelName = UserDefaults.standard.string(forKey: "activation_level_name") ?? ""
         
         if activated && !levelName.isEmpty {
-            return "\(levelName)会员"
+            return "\(levelName)"
         } else {
             return "未激活"
         }
@@ -685,7 +822,7 @@ struct ProfileRowView: View {
                 // 图标
                 Image(systemName: icon)
                     .font(.system(size: 20))
-                    .foregroundColor(.blue)
+                    .foregroundColor(.primary)
                     .frame(width: 24, height: 24)
                 
                 // 标题和副标题
@@ -755,7 +892,7 @@ struct BindingConfirmView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                         
-                        Text("请确认绑定信息并输入二级密码")
+                        Text("请确认绑定信息并输入绑定码")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -787,14 +924,14 @@ struct BindingConfirmView: View {
                     .cornerRadius(12)
                     .padding(.horizontal, 20)
                     
-                    // 二级密码输入区域
+                    // 绑定码输入区域
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("二级密码")
+                        Text("绑定码")
                             .font(.subheadline)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
                         
-                        SecureField("请输入您的二级密码", text: $secondaryPassword)
+                        SecureField("请输入您的绑定码", text: $secondaryPassword)
                             .textFieldStyle(PlainTextFieldStyle())
                             .padding()
                             .background(Color.white)
@@ -805,7 +942,7 @@ struct BindingConfirmView: View {
                             )
                             .disabled(isLoading)
                         
-                        Text("二级密码用于验证绑定操作的安全性")
+                        Text("绑定码用于验证绑定操作的安全性")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -863,7 +1000,7 @@ struct BindingConfirmView: View {
                                 .foregroundColor(.secondary)
                         } icon: {
                             Image(systemName: "info.circle")
-                                .foregroundColor(.blue)
+                                .foregroundColor(.primary)
                         }
                         
                         Label {
@@ -872,7 +1009,7 @@ struct BindingConfirmView: View {
                                 .foregroundColor(.secondary)
                         } icon: {
                             Image(systemName: "eye")
-                                .foregroundColor(.blue)
+                                .foregroundColor(.primary)
                         }
                     }
                     .padding(.horizontal, 24)
@@ -919,14 +1056,14 @@ struct BindingConfirmView: View {
             }
             .background(Color(UIColor.systemGroupedBackground))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("取消") {
                         onCancel()
                     }
                     .disabled(isLoading)
                 }
-            }
+            })
         }
     }
     
@@ -984,9 +1121,9 @@ struct BindingConfirmView: View {
             return
         }
         
-        // 验证二级密码
+        // 验证绑定码
         guard !secondaryPassword.isEmpty else {
-            errorMessage = "请输入二级密码"
+            errorMessage = "请输入绑定码"
             return
         }
         
@@ -1021,13 +1158,13 @@ struct BindingConfirmView: View {
             // 短暂延迟，让用户看到状态
             try await Task.sleep(nanoseconds: 500_000_000)
             
-            // 步骤2: 验证设备端二级密码
+            // 步骤2: 验证设备端绑定码
             await MainActor.run {
                 currentStep = .verifyingDevice
-                statusMessage = "正在验证二级密码..."
+                statusMessage = "正在验证绑定码..."
             }
             
-            print("📝 步骤2: 验证设备端二级密码...")
+            print("📝 步骤2: 验证设备端绑定码...")
             let verifyResponse = try await APIService.shared.verifyDeviceBinding(
                 bindingId: createResponse.bindingId,
                 secondaryPassword: secondaryPassword

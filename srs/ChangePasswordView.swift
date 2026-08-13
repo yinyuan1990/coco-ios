@@ -9,11 +9,16 @@ import SwiftUI
 
 struct ChangePasswordView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var appState: AppState  // 🔥 用于导航到登录页
     
-    @State private var oldPassword: String = ""
-    @State private var newPassword: String = ""
-    @State private var confirmPassword: String = ""
-    @State private var secondaryPassword: String = ""
+    // 🔥 修改成功后的回调（由 ProfileView 传入，用于完整退出流程）
+    var onPasswordChangeSuccess: (() -> Void)?
+    
+    // 🔥 3个输入框（原登录密码自动获取）
+    @State private var oldPassword: String = ""           // 原登录密码（自动获取，不显示）
+    @State private var oldSecondaryPassword: String = ""  // 原绑定码
+    @State private var newPassword: String = ""           // 新登录密码
+    @State private var newSecondaryPassword: String = ""  // 新绑定码
     
     @State private var isChanging: Bool = false
     @State private var showAlert: Bool = false
@@ -24,88 +29,72 @@ struct ChangePasswordView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景
-                Color(.systemGroupedBackground)
+                // 背景 - 白色
+                Color.white
                     .ignoresSafeArea()
                 
                 ScrollView {
-                    VStack(spacing: 24) {
-                        // 图标
-                        Image(systemName: "lock.rotation")
-                            .font(.system(size: 60))
-                            .foregroundColor(.blue)
-                            .padding(.top, 30)
+                    VStack(spacing: 0) {
+                        // 顶部间距
+                        Color.clear.frame(height: 30)
                         
-                        // 提示文字
-                        Text("请输入原密码和新密码")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                        // 图标区域
+                        VStack(spacing: 12) {
+                            Image(systemName: "lock.rotation")
+                                .font(.system(size: 40))
+                                .foregroundColor(.primary)
+                            
+                            // 提示文字
+                            Text("修改登录密码和绑定码")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color(hex: "808080"))
+                        }
+                        .padding(.bottom, 30)
                         
-                        // 输入区域
+                        // ⭐ 需求#2（2026-07-31）：不再要求输入原绑定码（管理密码）——
+                        //   已登录 + 原登录密码自动校验足够，后端已同步改为可选。
                         VStack(spacing: 0) {
-                            // 原密码
+                            // 新登录密码
                             PasswordInputRow(
-                                title: "原密码",
-                                placeholder: "请输入原密码",
-                                text: $oldPassword
-                            )
-                            
-                            Divider()
-                                .padding(.leading, 16)
-                            
-                            // 新密码
-                            PasswordInputRow(
-                                title: "新密码",
-                                placeholder: "请输入新密码（至少6位）",
+                                title: "新登录密码",
+                                placeholder: "请输入新登录密码（6-20位）",
                                 text: $newPassword
                             )
                             
                             Divider()
-                                .padding(.leading, 16)
+                                .padding(.leading, 96)
                             
-                            // 确认新密码
+                            // 新绑定码
                             PasswordInputRow(
-                                title: "确认密码",
-                                placeholder: "请再次输入新密码",
-                                text: $confirmPassword
-                            )
-                            
-                            Divider()
-                                .padding(.leading, 16)
-                            
-                            // 二级密码
-                            PasswordInputRow(
-                                title: "二级密码",
-                                placeholder: "请输入二级密码",
-                                text: $secondaryPassword
+                                title: "新绑定码",
+                                placeholder: "请输入新绑定码（6-20位）",
+                                text: $newSecondaryPassword
                             )
                         }
-                        .background(Color.white)
+                        .background(Color(hex: "F4F4F8"))
                         .cornerRadius(12)
                         .padding(.horizontal, 16)
+                        
+                        Spacer().frame(height: 40)
                         
                         // 提交按钮
                         Button(action: {
                             handleChangePassword()
                         }) {
-                            HStack {
-                                if isChanging {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.8)
-                                }
-                                Text(isChanging ? "修改中..." : "确认修改")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.white)
+                            if isChanging {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "FAFAFA")))
+                                    .frame(width: 160, height: 46)
+                            } else {
+                                Text("确认修改")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(Color(hex: "FAFAFA"))
+                                    .frame(width: 160, height: 46)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(isChanging ? Color.gray : Color.blue)
-                            .cornerRadius(12)
                         }
+                        .background(isChanging ? Color(hex: "CCCCCC") : Color.blue)
+                        .cornerRadius(10)
                         .disabled(isChanging)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
                         
                         Spacer()
                     }
@@ -113,22 +102,38 @@ struct ChangePasswordView: View {
             }
             .navigationTitle("修改密码")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .toolbar(content: {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
                         dismiss()
                     }) {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.primary)
+                            .foregroundColor(Color(hex: "1A1A1A"))
                     }
+                }
+            })
+            .onAppear {
+                // 设置导航栏为白色背景
+                let appearance = UINavigationBarAppearance()
+                appearance.configureWithOpaqueBackground()
+                appearance.backgroundColor = .white
+                appearance.titleTextAttributes = [.foregroundColor: UIColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)]
+                UINavigationBar.appearance().standardAppearance = appearance
+                UINavigationBar.appearance().scrollEdgeAppearance = appearance
+                
+                // 🔥 自动获取原登录密码
+                if let accountInfo = AccountStorageManager.shared.loadAccountInfo() {
+                    oldPassword = accountInfo.password
+                    print("✅ 已自动获取原登录密码")
                 }
             }
         }
         .alert(alertTitle, isPresented: $showAlert) {
             Button("确定") {
                 if isSuccess {
-                    dismiss()
+                    // 🔥 修改成功后退出到登录界面
+                    handleLogoutAfterPasswordChange()
                 }
             }
         } message: {
@@ -136,36 +141,40 @@ struct ChangePasswordView: View {
         }
     }
     
-    // MARK: - 修改密码逻辑
+    // MARK: - 修改密码逻辑（使用新接口 PUT /api/user/password/all）
     private func handleChangePassword() {
-        // 输入验证
+        // 🔥 验证原登录密码（自动获取）
         guard !oldPassword.isEmpty else {
-            showError("请输入原密码")
+            showError("无法获取原登录密码，请重新登录后再试")
             return
         }
         
+        // ⭐ 需求#2：原绑定码不再要求输入（oldSecondaryPassword 恒为空串，后端跳过校验）
+        
+        // 🔥 验证新登录密码
         guard !newPassword.isEmpty else {
-            showError("请输入新密码")
+            showError("请输入新登录密码")
             return
         }
         
-        guard newPassword.count >= 6 else {
-            showError("新密码长度至少6位")
-            return
-        }
-        
-        guard newPassword == confirmPassword else {
-            showError("两次输入的新密码不一致")
+        guard newPassword.count >= 6 && newPassword.count <= 20 else {
+            showError("新登录密码长度必须在6-20位之间")
             return
         }
         
         guard oldPassword != newPassword else {
-            showError("新密码不能与原密码相同")
+            showError("新登录密码不能与原登录密码相同")
             return
         }
         
-        guard !secondaryPassword.isEmpty else {
-            showError("请输入二级密码")
+        // 🔥 验证新绑定码
+        guard !newSecondaryPassword.isEmpty else {
+            showError("请输入新绑定码")
+            return
+        }
+        
+        guard newSecondaryPassword.count >= 6 && newSecondaryPassword.count <= 20 else {
+            showError("新绑定码长度必须在6-20位之间")
             return
         }
         
@@ -174,17 +183,19 @@ struct ChangePasswordView: View {
         
         Task {
             do {
-                let _ = try await APIService.shared.changePassword(
+                // 🔥 调用新接口：同时修改登录密码和绑定码
+                let response = try await APIService.shared.changeAllPasswords(
                     oldPassword: oldPassword,
+                    oldSecondaryPassword: oldSecondaryPassword,
                     newPassword: newPassword,
-                    secondaryPassword: secondaryPassword
+                    newSecondaryPassword: newSecondaryPassword
                 )
                 
                 await MainActor.run {
                     isChanging = false
                     isSuccess = true
                     alertTitle = "修改成功"
-                    alertMessage = "密码已成功修改"
+                    alertMessage = response.message
                     showAlert = true
                 }
                 
@@ -215,6 +226,33 @@ struct ChangePasswordView: View {
         alertMessage = message
         showAlert = true
     }
+    
+    // 🔥 修改密码成功后退出到登录界面
+    private func handleLogoutAfterPasswordChange() {
+        print("🔐 密码修改成功，准备退出到登录界面")
+        
+        // 1. 关闭当前页面
+        dismiss()
+        
+        // 2. 延迟调用回调（确保dismiss完成后由ProfileView处理完整退出流程）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if let callback = onPasswordChangeSuccess {
+                callback()
+            } else {
+                // 🔥 兜底逻辑：如果没有回调，直接执行退出流程
+                print("📢 发送停止推流通知")
+                NotificationCenter.default.post(name: NSNotification.Name("StopPublishBeforeLogout"), object: nil)
+                
+                print("🔌 断开WebSocket连接")
+                WebSocketManager.shared.disconnect()
+                
+                UserDefaults.standard.set("", forKey: "jwt_token")
+                UserDefaults.standard.set("", forKey: "permanent_token")
+                
+                appState.navigateToMonitorLogin()
+            }
+        }
+    }
 }
 
 // MARK: - 密码输入行组件
@@ -226,15 +264,17 @@ struct PasswordInputRow: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.system(size: 16))
-                .foregroundColor(.primary)
+                .font(.system(size: 14))
+                .foregroundColor(Color(hex: "808080"))
                 .frame(width: 80, alignment: .leading)
             
             SecureField(placeholder, text: $text)
-                .font(.system(size: 16))
+                .font(.system(size: 14))
+                .foregroundColor(Color(hex: "1A1A1A"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+        .background(Color.white)
     }
 }
 

@@ -21,37 +21,34 @@ class APIConfig {
     
     private var baseWsURL: String {
         #if DEBUG
-        return "wss://ws.cocoaihj.com/native-ws" // 修改为原生WebSocket端点
+        return "wss://ws.cocoaihj.com/native-ws"
         #else
-        return "wss://ws.cocoaihj.com/native-ws" // 修改为原生WebSocket端点
+        return "wss://ws.cocoaihj.com/native-ws"
         #endif
     }
-
+    
     public var baseStompWsURL: String {
         #if DEBUG
-        return "wss://ws.cocoaihj.com/ws" // 修改为原生WebSocket端点
+        return "wss://ws.cocoaihj.com/ws"
         #else
-        return "wss://ws.cocoaihj.com/ws" // 修改为原生WebSocket端点
+        return "wss://ws.cocoaihj.com/ws"
         #endif
     }
     
     // API版本
     private let apiVersion = "/api"
     
-    // 静态页面相关（加载本地HTML文件）
-      struct StaticPages {
-          static let userAgreement = "user_agreement.html"     // 用户协议（本地）
-          static let privacyPolicy = "privacy_policy.html"     // 隐私政策（本地）
-      }
+    // 静态页面已改为本地加载（LocalWebView）
     
     // MARK: - API端点
     
     // 认证相关
     struct Auth {
         static let registerDevice = "/auth/register/device"  // 设备端注册
-        static let login = "/auth/login"
+        static let login = "/auth/login"  // coco/aihj 后端：老登录接口（无 /auth/login/device 一机一码）
         static let verifyToken = "/auth/verify-token"
         static let refreshToken = "/auth/refresh-token"
+        static let streamToken = "/auth/stream/token/simple"  // 获取推流Token
         static let securityQuestion1 = "/config/security_question_1"  // 默认密保问题1
         static let securityQuestion2 = "/config/security_question_2"  // 默认密保问题2
         static let securityQuestion3 = "/config/security_question_3"  // 默认密保问题3
@@ -60,7 +57,7 @@ class APIConfig {
     // 设备绑定相关
     struct Binding {
         static let create = "/binding/create"           // 创建绑定记录
-        static let verifyDevice = "/binding/verify-device"  // 设备端验证二级密码
+        static let verifyDevice = "/binding/verify-device"  // 设备端验证绑定码
         static let list = "/binding/list"               // 获取已绑定列表
         static let unbind = "/binding/unbind"           // 解绑 (DELETE /binding/unbind/{bindingId})
     }
@@ -69,8 +66,9 @@ class APIConfig {
     struct User {
         static let profile = "/user/profile"                    // 获取用户资料
         static let updateProfile = "/user/profile"              // 更新用户资料（昵称和头像）
-        static let changePassword = "/user/password"            // 修改密码
-        static let deleteAccount = "/user/account"              // 注销账号
+        static let changePassword = "/user/password"            // 修改密码（旧接口）
+        static let changeAllPasswords = "/user/password/all"    // 🔥 同时修改登录密码和绑定码（iOS设备端专用）
+        static let deleteAccount = "/user/account"        // coco/aihj 后端：注销账号（DELETE，仅凭 JWT，无请求体）
     }
     
     // 会员相关
@@ -92,6 +90,31 @@ class APIConfig {
     struct Activation {
         static let activate = "/activation/activate"     // 激活会员
         static let status = "/activation/status"         // 获取激活状态
+    }
+    
+    // 🔥 问题反馈相关
+    struct Message {
+        static let config = "/message/config"            // 获取问题反馈配置
+        static let submit = "/message/submit"            // 提交问题反馈
+        static let list = "/message/list"                // 获取问题反馈列表
+        static let detail = "/message/detail"            // 获取问题反馈详情
+        static let unreadReplies = "/message/unread-replies"  // §56.11 未读回复（登录后弹框）
+        static let read = "/message/read"                // §56.11 全部标记已读（点"已读"后不再弹）
+    }
+
+    // 🔥 §59 登录广告（登录成功后弹框，后台可编辑）
+    struct Ad {
+        static let loginAd = "/config/login-ad"          // 广告配置（公开接口）
+        static let loginAdPage = "/config/login-ad/page" // 广告 HTML 页（WKWebView 直接加载）
+    }
+
+    // 🔥 §60 邀请活动 + PC 下载入口（2026-08-13）
+    struct Referral {
+        static let variant = ""                          // 变体：iOS 属主版 ""（android-otg 为 "otg"），后端两套配置独立
+        static let status = "/referral/status"           // 登录弹层三态+打卡+档位（需 JWT）
+        static let bind = "/referral/bind"               // 试用用户填写邀请人（终身一次）
+        static let claim = "/referral/claim"             // 会员领取档位奖励
+        static let pcdl = "/config/pcdl"                 // PC 端下载入口配置（公开接口）
     }
     
     // MARK: - 完整URL生成方法
