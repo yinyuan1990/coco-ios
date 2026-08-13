@@ -1,6 +1,6 @@
 //
 //  P2PManager.swift
-//  金凤凰
+//  幻境2
 //
 //  独立的 P2P/WebRTC 直连管理类。
 //  - 与 SRS 模式互斥：connect_mode == "p2p" 时由 WebRTCManager 启动本类，SRS 推流不启用。

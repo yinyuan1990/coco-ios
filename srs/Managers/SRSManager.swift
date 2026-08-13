@@ -1,6 +1,6 @@
 //
 //  SRSManager.swift
-//  金凤凰
+//  幻境2
 //
 //  独立的 SRS 推流连接管理类（与 P2PManager 对称）。
 //  - 仅负责 SRS 连接建立（创建 PeerConnection、Offer→/rtc/v1/publish→Answer、Token、deleteStream）

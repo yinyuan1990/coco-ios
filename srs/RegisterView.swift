@@ -78,7 +78,6 @@ struct RegisterView: View {
     @State private var nickname = ""  // 🔥 新增昵称字段
     @State private var password = ""
     @State private var secondaryPassword = ""
-    @State private var isPasswordVisible = false  // 密码可见性
     
     // 密保问题和答案（默认答案为1、2、3）
     @State private var question1 = "您的出生年月日是？"
@@ -105,9 +104,13 @@ struct RegisterView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // 背景 - 白色
-                Color.white
-                    .ignoresSafeArea()
+                // 背景
+                LinearGradient(
+                    gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
                 if showSuccessView, let result = registerResult {
                     // 注册成功界面
@@ -117,180 +120,217 @@ struct RegisterView: View {
                         onBackToLogin: { backToLoginWithCredentials(result) }
                     )
                 } else {
+                    // 注册表单 - 使用 VStack 包裹 ScrollView + 固定底部按钮
                     VStack(spacing: 0) {
-                        // 顶部安全区域
-                        Color.clear.frame(height: 25)
+                        // 顶部留空给关闭按钮
+                        Color.clear.frame(height: 50)
                         
-                        // 顶部导航栏
+                        // 可滚动的表单内容
+                        ScrollView {
+                            VStack(spacing: 20) {
+                                // 标题区域
+                                VStack(spacing: 8) {
+                                    Text("设备端注册")
+                                        .font(.system(size: 28, weight: .bold))
+                                        .foregroundColor(.primary)
+                                    
+                                    Image(systemName: "iphone.gen3")
+                                        .font(.system(size: 50))
+                                        .foregroundColor(.blue)
+                                        .padding(.top, 10)
+                                    
+                                    Text("请填写注册信息")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                }
+                                .padding(.top, 10)
+                                
+                                // 基本信息
+                                VStack(spacing: 15) {
+                                    // 用户名（账号）- 8-12位，无自动生成
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("账号（必填）")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                        
+                                        TextField("请输入8-12位字母或数字", text: $username)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                            .autocapitalization(.none)
+                                            .disableAutocorrection(true)
+                                            .onChange(of: username) { newValue in
+                                                // 限制为12位
+                                                if newValue.count > 12 {
+                                                    username = String(newValue.prefix(12))
+                                                }
+                                            }
+                                        
+                                        Text("8-12位字母或数字组合，全局唯一")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    
+                                    // 昵称 - 自动生成，不可手动输入
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            Text("昵称（自动生成）")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                            
+                                            Spacer()
+                                            
+                                            Button(action: {
+                                                nickname = generateNickname()
+                                            }) {
+                                                HStack(spacing: 4) {
+                                                    Image(systemName: "arrow.clockwise")
+                                                        .font(.system(size: 12))
+                                                    Text("换一个")
+                                                        .font(.system(size: 12))
+                                                }
+                                                .foregroundColor(.blue)
+                                                .padding(.horizontal, 10)
+                                                .padding(.vertical, 6)
+                                                .background(Color.blue.opacity(0.1))
+                                                .cornerRadius(8)
+                                            }
+                                        }
+                                        
+                                        // 只读显示昵称，不允许编辑
+                                        Text(nickname.isEmpty ? "自动生成中..." : nickname)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 10)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                                            )
+                                        
+                                        Text("系统自动生成，点击「换一个」更换")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    
+                                    // 登录密码
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("登录密码（必填）")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                        
+                                        SecureField("6-20位密码", text: $password)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        
+                                        Text("密码长度6-20位")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    
+                                    // 二级密码
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("二级密码（必填）")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                        
+                                        SecureField("6-20位二级密码", text: $secondaryPassword)
+                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        
+                                        Text("用于设备绑定验证，可通过密保问题找回")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                .padding(.horizontal, 30)
+                                
+                                // 密保答案使用默认值，不显示在UI上
+                                
+                                // 底部留空，给固定按钮留空间
+                                Color.clear.frame(height: 20)
+                            }
+                        }
+                        
+                        // 固定在底部的注册按钮区域
+                        VStack(spacing: 12) {
+                            Divider()
+                            
+                            // 注册按钮
+                            Button(action: {
+                                handleRegister()
+                            }) {
+                                HStack {
+                                    if isRegistering {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.8)
+                                    }
+                                    Text(isRegistering ? "注册中..." : "立即注册")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(isRegistering ? Color.gray : (canRegister ? Color.blue : Color.gray))
+                                .cornerRadius(12)
+                            }
+                            .disabled(!canRegister || isRegistering)
+                            .padding(.horizontal, 20)
+                            
+                            // 底部协议条款
+                            VStack(spacing: 4) {
+                                Text("注册即表示您同意")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.gray)
+                                
+                                HStack(spacing: 4) {
+                                    Button(action: {
+                                        showUserAgreement = true
+                                    }) {
+                                        Text("《用户协议》")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.blue)
+                                    }
+                                    
+                                    Text("和")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.gray)
+                                    
+                                    Button(action: {
+                                        showPrivacyPolicy = true
+                                    }) {
+                                        Text("《隐私政策》")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.blue)
+                                    }
+                                }
+                            }
+                            .padding(.bottom, 20)
+                        }
+                        .background(Color.white)
+                    }
+                }
+                
+                // 顶部关闭按钮
+                if !showSuccessView {
+                    VStack {
                         HStack {
                             Button(action: {
                                 dismiss()
                             }) {
-                                Image(systemName: "chevron.left")
+                                Image(systemName: "xmark")
                                     .font(.system(size: 18, weight: .medium))
-                                    .foregroundColor(Color(hex: "1A1A1A"))
+                                    .foregroundColor(.gray)
+                                    .frame(width: 32, height: 32)
+                                    .background(Color.black.opacity(0.1))
+                                    .clipShape(Circle())
                             }
-                            
                             Spacer()
-                            
-                            Text("监控注册")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(Color(hex: "1A1A1A"))
-                            
-                            Spacer()
-                            
-                            // 占位，保持标题居中
-                            Color.clear.frame(width: 18)
                         }
-                        .padding(.horizontal, 16)
-                        .frame(height: 44)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
                         
-                        // 分隔线
-                        Divider()
-                            .background(Color(hex: "F0F0F0"))
-                        
-                        // 可滚动内容
-                        ScrollView {
-                            VStack(spacing: 30) {
-                                // 输入表单
-                                VStack(spacing: 0) {
-                                    // 账号输入（用户手动输入9-12位，注册时自动添加 Y- 前缀）
-                                    HStack(spacing: 6) {
-                                        ZStack {
-                                            Circle()
-                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
-                                                .frame(width: 20, height: 20)
-                                            Image(systemName: "person")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(Color(hex: "1A1A1A"))
-                                        }
-                                        .frame(width: 24, height: 24)
-                                        
-                                        TextField("请输入账号(9-12位)", text: $username)
-                                            .font(.system(size: 16))
-                                            .keyboardType(.asciiCapable)
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: username, perform: { newValue in
-                                                // 限制只能输入字母和数字，最多12位
-                                                let filtered = newValue.filter { $0.isLetter || $0.isNumber }
-                                                if filtered.count > 12 {
-                                                    username = String(filtered.prefix(12))
-                                                } else if filtered != newValue {
-                                                    username = filtered
-                                                }
-                                            })
-                                        
-                                        Spacer()
-                                        
-                                        // 显示当前输入长度
-                                        Text("\(username.count)/12")
-                                                .font(.system(size: 12))
-                                            .foregroundColor(username.count >= 9 ? Color(hex: "4CAF50") : Color(hex: "A3A3A3"))
-                                    }
-                                    .padding(.vertical, 16)
-                                    
-                                    Divider().background(Color(hex: "F0F0F0"))
-                                    
-                                    // 登录密码
-                                    HStack(spacing: 6) {
-                                        ZStack {
-                                            Circle()
-                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
-                                                .frame(width: 20, height: 20)
-                                            Image(systemName: "lock.fill")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(Color(hex: "1A1A1A"))
-                                        }
-                                        .frame(width: 24, height: 24)
-                                        
-                                        if isPasswordVisible {
-                                            TextField("请输入登录密码", text: $password)
-                                                .font(.system(size: 16))
-                                        } else {
-                                            SecureField("请输入登录密码", text: $password)
-                                                .font(.system(size: 16))
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Button(action: { isPasswordVisible.toggle() }) {
-                                            Image(systemName: isPasswordVisible ? "eye" : "eye.slash")
-                                                .font(.system(size: 14))
-                                                .foregroundColor(Color(hex: "A3A3A3"))
-                                        }
-                                    }
-                                    .padding(.vertical, 16)
-                                    
-                                    Divider().background(Color(hex: "F0F0F0"))
-                                    
-                                    // 绑定码
-                                    HStack(spacing: 6) {
-                                        ZStack {
-                                            Circle()
-                                                .stroke(Color(hex: "B3B3B3"), lineWidth: 0.6)
-                                                .frame(width: 20, height: 20)
-                                            Image(systemName: "lock.fill")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(Color(hex: "1A1A1A"))
-                                        }
-                                        .frame(width: 24, height: 24)
-                                        
-                                        // ⭐ 需求#6（2026-07-31）：统一叫「绑定密码」
-                                        SecureField("请输入绑定密码", text: $secondaryPassword)
-                                            .font(.system(size: 16))
-                                    }
-                                    .padding(.vertical, 16)
-                                    
-                                    Divider().background(Color(hex: "F0F0F0"))
-
-                                    // ⭐ 需求#6：绑定密码说明（醒目提示）
-                                    Text("💡 用于绑定PC端的密码，可以和登录密码一样")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundColor(Color(hex: "FF7A00"))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .padding(.top, 12)
-                                }
-                                .padding(.horizontal, 22)
-                                
-                                // 立即注册按钮（样式与登录按钮一致）
-                                Button(action: {
-                                    handleRegister()
-                                }) {
-                                    HStack {
-                                        if isRegistering {
-                                            ProgressView()
-                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                                .scaleEffect(0.8)
-                                        }
-                                        Text(isRegistering ? "注册中..." : "立即注册")
-                                            .font(.system(size: 18, weight: .semibold))
-                                            .foregroundColor(.white)
-                                    }
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 48)
-                                    .background(
-                                        isRegistering ?
-                                        AnyView(Color.gray) :
-                                        AnyView(LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(hex: "B7F4FC"),
-                                                Color(hex: "93D6F9"),
-                                                Color(hex: "65AEF7")
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ))
-                                    )
-                                    .cornerRadius(8)
-                                }
-                                .disabled(isRegistering)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 20)
-                                
-                                Spacer()
-                            }
-                        }
+                        Spacer()
                     }
                 }
             }
@@ -323,8 +363,10 @@ struct RegisterView: View {
             LocalWebView(fileName: "privacy_policy", title: "隐私政策")
         }
         .onAppear {
-            // 🔥 账号由用户手动输入，不再自动生成
-            // 🔥 昵称自动生成为 Y- + 账号前8位（在注册时处理）
+            // 🔥 自动生成昵称
+            if nickname.isEmpty {
+                nickname = generateNickname()
+            }
             // 加载默认密保问题
             loadDefaultSecurityQuestions()
         }
@@ -334,15 +376,16 @@ struct RegisterView: View {
     
     // 验证是否可以注册
     private var canRegister: Bool {
-        // 账号：9-12位
-        guard username.count >= 9, username.count <= 12 else { return false }
+        // 账号：8-12位
+        guard username.count >= 8, username.count <= 12 else { return false }
         
-        // 🔥 昵称自动生成，无需验证
+        // 昵称：1-50位
+        guard nickname.count >= 1, nickname.count <= 50 else { return false }
         
         // 密码：6-20位
         guard password.count >= 6, password.count <= 20 else { return false }
         
-        // 绑定码：6-20位
+        // 二级密码：6-20位
         guard secondaryPassword.count >= 6, secondaryPassword.count <= 20 else { return false }
         
         // 密保问题和答案不能为空
@@ -354,23 +397,6 @@ struct RegisterView: View {
     }
     
     // MARK: - 方法
-    
-    // 🔥 自动生成9位唯一账号（基于时间戳hash）
-    private func generateUsername() -> String {
-        // 获取当前时间戳（纳秒级精度确保唯一性）
-        let timestamp = Int(Date().timeIntervalSince1970 * 1000000)
-        
-        // 使用时间戳的哈希值确保唯一性
-        var hash = abs(timestamp.hashValue)
-        
-        // 转换为9位数字字符串
-        // 取模确保在9位数范围内：100000000-999999999
-        let nineDigitHash = 100000000 + (hash % 900000000)
-        let username = String(nineDigitHash)
-        
-        print("🎲 自动生成9位账号: \(username)")
-        return username
-    }
     
     // 🔥 自动生成昵称（时间戳后3位 + 随机3位，确保唯一性）
     private func generateNickname() -> String {
@@ -384,17 +410,6 @@ struct RegisterView: View {
         let nickname = timePart + randomPart
         print("🎲 自动生成昵称: \(nickname) (时间:\(timePart) + 随机:\(randomPart))")
         return nickname
-    }
-    
-    // 🔥 自动生成 Y 开头的 8 位账号
-    private func generateAutoUsername() -> String {
-        // Y + 7位数字（时间戳后4位 + 随机3位）
-        let nanoseconds = DispatchTime.now().uptimeNanoseconds
-        let timePart = String("\(nanoseconds)".suffix(4))
-        let randomPart = String(format: "%03d", Int.random(in: 0...999))
-        let username = "Y" + timePart + randomPart
-        print("🎲 自动生成账号: \(username)")
-        return username
     }
     
     // 加载默认密保问题
@@ -475,7 +490,7 @@ struct RegisterView: View {
         
         isRegistering = true
         
-        // 先做设备检查，避免"账号已删但设备仍绑定"的死循环
+        // ⭐ 先做设备检查，避免"账号已删但设备仍绑定"的死循环（新版逻辑，检查失败不阻断）
         Task {
             do {
                 let checkResult = try await checkDeviceStatus()
@@ -515,14 +530,9 @@ struct RegisterView: View {
     
     // 实际注册逻辑（check-device 通过后调用）
     private func proceedWithRegister() {
-        // 🔥 直接使用用户输入的账号（9-12位，不加前缀）
-        let finalUsername = username.trimmingCharacters(in: .whitespaces)
-        // 🔥 昵称自动生成为账号前8位
-        let finalNickname = String(finalUsername.prefix(8))
-        
         let requestBody = DeviceRegisterRequest(
-            username: finalUsername,
-            nickname: finalNickname,
+            username: username.trimmingCharacters(in: .whitespaces),
+            nickname: nickname.trimmingCharacters(in: .whitespaces),  // 🔥 新增昵称
             deviceId: deviceId,
             password: password,
             secondaryPassword: secondaryPassword,
@@ -535,7 +545,7 @@ struct RegisterView: View {
         )
         
         print("📝 开始注册设备端用户...")
-        print("   - 账号: \(requestBody.username) (9-12位)")
+        print("   - 账号: \(requestBody.username)")
         print("   - 昵称: \(requestBody.nickname)")
         print("   - 设备ID: \(requestBody.deviceId)")
         
@@ -551,15 +561,15 @@ struct RegisterView: View {
                     // 构建注册结果数据
                     let registerData = RegisterData(
                         username: response.username,
-                        nickname: response.nickname ?? String(username.prefix(8)),
+                        nickname: response.nickname ?? nickname,  // 🔥 新增昵称
                         deviceId: response.deviceId,
                         password: password,
                         secondaryPassword: secondaryPassword,
                         message: response.message
                     )
                     
-                    // 🔥 直接跳转登录界面（不再保存到相册）
-                    backToLoginWithCredentials(registerData)
+                    registerResult = registerData
+                    showSuccessView = true
                     
                 case .failure(let error):
                     print("❌ 注册失败: \(error.localizedDescription)")
@@ -579,19 +589,28 @@ struct RegisterView: View {
     
     // 验证输入
     private func validateInput() -> Bool {
-        // 账号验证（9-12位字母或数字）
-        if username.count < 9 || username.count > 12 {
-            showAlert(message: "账号必须是9-12位字母或数字")
+        // 账号验证（8-12位字母或数字）
+        if username.count < 8 || username.count > 12 {
+            showAlert(message: "账号必须是8-12位字母或数字")
             return false
         }
         
-        let usernamePattern = "^[a-zA-Z0-9]{9,12}$"
+        let usernamePattern = "^[a-zA-Z0-9]{8,12}$"
         if username.range(of: usernamePattern, options: .regularExpression) == nil {
             showAlert(message: "账号只能包含字母和数字")
             return false
         }
         
-        // 🔥 昵称自动生成，无需验证
+        // 昵称验证（1-50位）
+        if nickname.isEmpty {
+            showAlert(message: "请填写昵称")
+            return false
+        }
+        
+        if nickname.count > 50 {
+            showAlert(message: "昵称最多50位")
+            return false
+        }
         
         // 密码验证
         if password.count < 6 || password.count > 20 {
@@ -599,9 +618,9 @@ struct RegisterView: View {
             return false
         }
         
-        // 绑定码验证
+        // 二级密码验证
         if secondaryPassword.count < 6 || secondaryPassword.count > 20 {
-            showAlert(message: "绑定码长度必须在6到20位之间")
+            showAlert(message: "二级密码长度必须在6到20位之间")
             return false
         }
         
@@ -680,7 +699,7 @@ struct RegisterView: View {
         昵称：\(data.nickname)
         设备ID：\(data.deviceId)
         登录密码：\(data.password)
-        绑定码：\(data.secondaryPassword)
+        二级密码：\(data.secondaryPassword)
         
         密保问题1：\(question1)
         答案1：\(answer1)
@@ -697,20 +716,24 @@ struct RegisterView: View {
         // 创建图片
         let image = createAccountInfoImage(text: accountInfo)
         
-        // 保存到相册（静默保存，不显示提示）
+        // 保存到相册
         PHPhotoLibrary.requestAuthorization { status in
             if status == .authorized {
                 PHPhotoLibrary.shared().performChanges({
                     PHAssetChangeRequest.creationRequestForAsset(from: image)
                 }) { success, error in
+                    DispatchQueue.main.async {
                         if success {
-                        print("✅ 账号信息已自动保存到相册")
+                            showAlert(message: "账号信息已保存到相册")
                         } else {
-                        print("⚠️ 保存到相册失败: \(error?.localizedDescription ?? "未知错误")")
+                            showAlert(message: "保存失败：\(error?.localizedDescription ?? "未知错误")")
+                        }
                     }
                 }
             } else {
-                print("⚠️ 无相册权限，跳过保存")
+                DispatchQueue.main.async {
+                    showAlert(message: "需要相册访问权限才能保存")
+                }
             }
         }
     }
@@ -769,12 +792,6 @@ struct RegisterView: View {
         showAlert = true
     }
     
-    // Toast提示（简单实现）
-    private func showToast(message: String) {
-        alertMessage = message
-        showAlert = true
-}
-
     // 隐藏键盘
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -790,143 +807,73 @@ struct RegisterSuccessView: View {
     let onBackToLogin: () -> Void
     
     var body: some View {
-        ZStack {
-            // 白色背景
-            Color.white.ignoresSafeArea()
+        VStack(spacing: 30) {
+            // 成功图标
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 80))
+                .foregroundColor(.green)
             
-            VStack(spacing: 0) {
-                // 顶部安全区域
-                Color.clear.frame(height: 60)
+            Text("注册成功！")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.primary)
+            
+            // 账号信息卡片
+            VStack(alignment: .leading, spacing: 15) {
+                Text("您的账号信息")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.primary)
                 
-                // 成功图标
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(Color(hex: "4CAF50"))
-                    .padding(.bottom, 16)
-                
-                Text("注册成功")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color(hex: "1A1A1A"))
-                    .padding(.bottom, 24)
-                
-                // 账号信息卡片
-                VStack(alignment: .leading, spacing: 0) {
-                    // 标题
-                    Text("账号信息")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color(hex: "1A1A1A"))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                    
-                    Divider().background(Color(hex: "EEEEEE"))
-                    
-                    // 账号
+                VStack(alignment: .leading, spacing: 10) {
                     AccountInfoRow(title: "账号", value: registerData.username)
-                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
-                    
-                    // 昵称
                     AccountInfoRow(title: "昵称", value: registerData.nickname)
-                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
-                    
-                    // 设备ID（可完整显示）
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("设备ID")
-                                .font(.system(size: 14))
-                                .foregroundColor(Color(hex: "666666"))
-                            Spacer()
-                            Button(action: {
-                                UIPasteboard.general.string = registerData.deviceId
-                            }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.system(size: 12))
-                                    Text("复制")
-                                        .font(.system(size: 12))
-                                }
-                                .foregroundColor(Color(hex: "65AEF7"))
-                            }
-                        }
-                        Text(registerData.deviceId)
-                            .font(.system(size: 13, weight: .medium, design: .monospaced))
-                            .foregroundColor(Color(hex: "1A1A1A"))
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    
-                    Divider().background(Color(hex: "EEEEEE")).padding(.leading, 16)
-                    
-                    // 登录密码
+                    AccountInfoRow(title: "设备ID", value: registerData.deviceId)
                     AccountInfoRow(title: "登录密码", value: registerData.password)
-                }
-                .background(Color(hex: "F4F4F8"))
-                .cornerRadius(12)
-                .padding(.horizontal, 16)
-                
-                // 提示信息
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "FF9800"))
-                        Text("绑定码已设置，请妥善保管")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "666666"))
-                    }
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "65AEF7"))
-                        Text("密保问题可用于找回绑定码")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: "666666"))
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                
-                Spacer()
-                
-                // 操作按钮
-                VStack(spacing: 12) {
-                    Button(action: onSaveToAlbum) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 14))
-                            Text("保存完整信息到相册")
-                                .font(.system(size: 14, weight: .medium))
-                        }
-                        .foregroundColor(Color(hex: "65AEF7"))
-                        .frame(width: 200, height: 40)
-                        .background(Color(hex: "65AEF7").opacity(0.1))
-                        .cornerRadius(10)
-                    }
                     
-                    Button(action: onBackToLogin) {
-                        Text("返回登录")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 160, height: 46)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color(hex: "B7F4FC"),
-                                        Color(hex: "93D6F9"),
-                                        Color(hex: "65AEF7")
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .cornerRadius(10)
-                    }
+                    Text("⚠️ 二级密码已设置，请妥善保管")
+                        .font(.system(size: 12))
+                        .foregroundColor(.orange)
+                        .padding(.top, 5)
+                    
+                    Text("💡 密保问题可用于找回二级密码")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
                 }
-                .padding(.bottom, 40)
             }
+            .padding(20)
+            .background(Color.gray.opacity(0.05))
+            .cornerRadius(15)
+            .padding(.horizontal, 30)
+            
+            // 操作按钮
+            VStack(spacing: 15) {
+                Button(action: onSaveToAlbum) {
+                    HStack {
+                        Image(systemName: "square.and.arrow.down")
+                        Text("保存完整信息到相册")
+                    }
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.blue)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(10)
+                }
+                
+                Button(action: onBackToLogin) {
+                    Text("返回登录")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Color.green)
+                        .cornerRadius(12)
+                }
+            }
+            .padding(.horizontal, 30)
+            
+            Spacer()
         }
+        .padding(.top, 50)
     }
 }
 
@@ -938,32 +885,27 @@ struct AccountInfoRow: View {
     
     var body: some View {
         HStack {
-            Text(title)
+            Text(title + ":")
                 .font(.system(size: 14))
-                .foregroundColor(Color(hex: "666666"))
-                .frame(width: 70, alignment: .leading)
+                .foregroundColor(.secondary)
+                .frame(width: 80, alignment: .leading)
             
             Text(value)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(Color(hex: "1A1A1A"))
+                .foregroundColor(.primary)
                 .lineLimit(1)
+                .truncationMode(.middle)
             
             Spacer()
             
             Button(action: {
                 UIPasteboard.general.string = value
             }) {
-                HStack(spacing: 4) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.system(size: 12))
-                    Text("复制")
-                        .font(.system(size: 12))
-                }
-                .foregroundColor(Color(hex: "65AEF7"))
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 12))
+                    .foregroundColor(.blue)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
     }
 }
 
