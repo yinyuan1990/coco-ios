@@ -247,7 +247,8 @@ final class H265Support: ObservableObject {
     /// 选 H265 但 SDK/设备不支持时回落 H264。SRS 服务器 6.0.184 已 --h265=on。
     @discardableResult
     func applySelectionForSrs() -> VideoCodecOption {
-        let selected = VideoCodecOption.lastSelected(key: VideoCodecOption.srsStorageKey, defaultCodec: .h264)
+        // ⭐ aihj 版拍板：SRS 一律 H264，不读本地存储的编码选择。
+        let selected: VideoCodecOption = .h264
         guard let enc = encoderFactory else {
             setEffective(.h264)
             h265Log("⚠️ applySelectionForSrs: encoderFactory 未注册，维持 H264")

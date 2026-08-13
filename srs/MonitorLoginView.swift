@@ -45,7 +45,7 @@ struct MonitorLoginView: View {
     //   仅与保留下来的 `connectModeChip` / `CodecOptionChips` 一起留着，便于一键回滚到"用户手选"。
     @State private var selectedConnectMode: ConnectModeOption = ConnectModeOption.lastSelected
     @State private var selectedCodec: VideoCodecOption = VideoCodecOption.lastSelected
-    @State private var selectedCodecSrs: VideoCodecOption = VideoCodecOption.lastSelected(key: VideoCodecOption.srsStorageKey, defaultCodec: .h265)
+    @State private var selectedCodecSrs: VideoCodecOption = VideoCodecOption.lastSelected(key: VideoCodecOption.srsStorageKey, defaultCodec: .h264)
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
     @State private var showRegisterView: Bool = false
@@ -573,8 +573,9 @@ struct MonitorLoginView: View {
                     // ⭐ §53.4.4 编码默认值改由总后台配置（本机硬编或观看端内核不支持时
                     //   由 SessionPolicy/H265Support 自动回退 h264）。
                     //   §56.27：产品默认改 h264——字段缺省（老后端）也按 h264，与后端部署无关。
-                    let codecP2p = (loginResponse.videoCodecP2p ?? "h264").lowercased()
-                    let codecSrs = (loginResponse.videoCodecSrs ?? "h264").lowercased()
+                    // ⭐ aihj 版拍板：只要 SRS + H264，忽略后端下发的编码配置，一律写死 h264。
+                    let codecP2p = "h264"
+                    let codecSrs = "h264"
                     UserDefaults.standard.set(codecP2p, forKey: VideoCodecOption.storageKey)
                     UserDefaults.standard.set(codecSrs, forKey: VideoCodecOption.srsStorageKey)
 
