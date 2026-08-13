@@ -289,12 +289,13 @@ struct QualityRadioButton: View {
     let action: () -> Void
     
     private var profileName: String {
+        // ⭐ aihj 版：恢复老幻境2叫法 标清/高清/超清/4K
         switch profile {
-        case .p4k: return "超高清"
-        case .ultra: return "超高帧"
-        case .high: return "超清"
-        case .standard: return "高清"
-        case .low: return "超低网"
+        case .p4k: return "4K"
+        case .ultra: return "超清"
+        case .high: return "高清"
+        case .standard: return "标清"
+        case .low: return "低清"
         }
     }
     
@@ -391,6 +392,7 @@ struct SettingsPanelView: View {
                     .frame(height: 1)
                 
                 // 档位选择（仅 UI 效果，不实际调用，与后端同步）
+                // ⭐ aihj 版：恢复老幻境2四档 标清/高清/超清/4K（不显示超低网档）
                 HStack(spacing: 12) {
                         QualityRadioButton(
                             profile: .standard,
@@ -405,21 +407,15 @@ struct SettingsPanelView: View {
                         )
                         
                         QualityRadioButton(
-                            profile: .p4k,
-                            isSelected: selectedProfile == .p4k,
-                            action: { selectedProfile = .p4k }  // 仅 UI 效果
-                        )
-                        
-                        QualityRadioButton(
                             profile: .ultra,
                             isSelected: selectedProfile == .ultra,
                             action: { selectedProfile = .ultra }  // 仅 UI 效果
                         )
-
+                        
                         QualityRadioButton(
-                            profile: .low,
-                            isSelected: selectedProfile == .low,
-                            action: { selectedProfile = .low }  // 仅 UI 效果
+                            profile: .p4k,
+                            isSelected: selectedProfile == .p4k,
+                            action: { selectedProfile = .p4k }  // 仅 UI 效果
                         )
 
                     Spacer()
@@ -459,14 +455,14 @@ struct SettingsPanelView: View {
 struct ControlPanelView: View {
     @ObservedObject var rtc: WebRTCManager
     
-    // 档位名称（简短）
+    // 档位名称（简短）（⭐ aihj 版：老幻境2叫法；本视图当前未被使用，仅保持命名一致）
     private func profileName(_ p: LadderProfile) -> String {
         switch p {
-        case .p4k: return "超高清"
-        case .ultra: return "超高帧"
-        case .high: return "超清"
-        case .standard: return "高清"
-        case .low: return "超低网"
+        case .p4k: return "4K"
+        case .ultra: return "超清"
+        case .high: return "高清"
+        case .standard: return "标清"
+        case .low: return "低清"
         }
     }
 
@@ -653,14 +649,14 @@ struct ContentView: View {
     @State private var lastShownStageEnded: Int = 0
 
 
-    // 档位名称
+    // 档位名称（⭐ aihj 版：恢复老幻境2叫法 标清/高清/超清/4K）
     private func profileDisplayName(_ p: LadderProfile) -> String {
         switch p {
-        case .p4k: return "超高清"
-        case .ultra: return "超高帧"
-        case .high: return "超清"
-        case .standard: return "高清"
-        case .low: return "超低网"
+        case .p4k: return "4K"
+        case .ultra: return "超清"
+        case .high: return "高清"
+        case .standard: return "标清"
+        case .low: return "低清"
         }
     }
 
@@ -817,16 +813,8 @@ struct ContentView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(rtc.whiteBalanceIsAuto ? .cyan : .orange)
                         }
-                        // ⭐ §57.3（对齐 PC 的 §56.28b）：编码显示**故意**恒为 H265（障眼，不暴露真实
-                        //   会话编码）。真实编码看日志/内部状态（H265Support.effectiveCodec），面板仅供外人看。
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(Color.orange)
-                                .frame(width: 7, height: 7)
-                            Text("编码:H265")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.orange)
-                        }
+                        // ⭐ aihj 版：删掉主线的「编码恒显 H265」障眼行——老幻境2主页没有编码显示，
+                        //   且本版已写死只推 H264，显示 H265 反而误导。
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 5)
@@ -921,8 +909,8 @@ struct ContentView: View {
                         // 档位（可点击切换UI高亮，不发后端）+ 摄像头切换
                         HStack(spacing: 6) {
                             // 档位按钮（仅UI切换，不发送后端）
-                            // ⭐ 2026-08-01 用户要求：主页档位「超高清」「超高帧」互换显示位置（名称/等级不变，仅顺序）
-                            ForEach([LadderProfile.low, .standard, .high, .ultra, .p4k], id: \.self) { profile in
+                            // ⭐ aihj 版：恢复老幻境2四档 标清/高清/超清/4K（不显示超低网档）
+                            ForEach([LadderProfile.standard, .high, .ultra, .p4k], id: \.self) { profile in
                                 Button(action: {
                                     // 仅切换UI显示，不实际切换档位
                                     rtc.currentProfile = profile
