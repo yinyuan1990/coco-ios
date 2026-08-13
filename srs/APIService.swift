@@ -238,21 +238,25 @@ final class IOSPipelineConfig {
     private init() {}
 
     // 三链路总开关（打开才在第一次/切档时运用对应默认值）
+    // ⭐ aihj 版拍板：兜底一律直通（对齐老幻境2裸相机画面，不提亮不调色）。
+    //   主线兜底是 滤镜/硬件 开 + 全参数 1.10 + 增益 20（对标看家宝的看牌画质），画面明显偏亮。
+    //   aihj 后端登录响应没有 iosPipeline 块 → 兜底值即最终值，必须中性。
+    //   解析逻辑保留：后端以后想调画质，在登录响应加 iosPipeline 块即可覆盖。
     var switchLut: Bool      = false
-    var switchFilter: Bool   = true
-    var switchHardware: Bool = true
+    var switchFilter: Bool   = false
+    var switchHardware: Bool = false
 
-    // 滤镜默认值
-    var brightness:     Float = 1.10
-    var gamma:          Float = 1.10
-    var contrast:       Float = 1.10
-    var saturation:     Float = 1.10
-    /// 服务端线性曝光倍率（如 1.10）；运用前需 log2() 换算成 EV
-    var exposureLinear: Float = 1.10
-    var sharpness:      Float = 0.20
+    // 滤镜默认值（全部中性）
+    var brightness:     Float = 0.0
+    var gamma:          Float = 1.0
+    var contrast:       Float = 1.0
+    var saturation:     Float = 1.0
+    /// 服务端线性曝光倍率（如 1.10）；运用前需 log2() 换算成 EV。1.0 = 不提亮
+    var exposureLinear: Float = 1.0
+    var sharpness:      Float = 0.0
     var highlightLift:  Float = 0.0
-    var blackPoint:     Float = 0.10   // 锁死值
-    var redBoost:       Float = 0.02   // 锁死值 → iOS redGlow
+    var blackPoint:     Float = 0.0
+    var redBoost:       Float = 0.0
 
     // 硬件默认值
     /// 增益滑块 0-100（运用时映射到设备实际 ISO min..max）；白平衡始终自动，不在此存值
