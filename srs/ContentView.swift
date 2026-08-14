@@ -805,16 +805,24 @@ struct ContentView: View {
                                     .foregroundColor(.yellow)
                             }
                         }
+                        // ⭐ 2026-08-14 aihj：白平衡行隐藏（老板要求），代码保留
+                        // HStack(spacing: 4) {
+                        //     Circle()
+                        //         .fill(rtc.whiteBalanceIsAuto ? Color.cyan : Color.orange)
+                        //         .frame(width: 7, height: 7)
+                        //     Text("白平衡:\(rtc.whiteBalanceStatusText)")
+                        //         .font(.system(size: 11, weight: .medium))
+                        //         .foregroundColor(rtc.whiteBalanceIsAuto ? .cyan : .orange)
+                        // }
+                        // ⭐ 2026-08-14 aihj：推流编码显示 H264（本版写死只推 H264，如实显示）
                         HStack(spacing: 4) {
                             Circle()
-                                .fill(rtc.whiteBalanceIsAuto ? Color.cyan : Color.orange)
+                                .fill(Color.orange)
                                 .frame(width: 7, height: 7)
-                            Text("白平衡:\(rtc.whiteBalanceStatusText)")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(rtc.whiteBalanceIsAuto ? .cyan : .orange)
+                            Text("推流:H264")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.orange)
                         }
-                        // ⭐ aihj 版：删掉主线的「编码恒显 H265」障眼行——老幻境2主页没有编码显示，
-                        //   且本版已写死只推 H264，显示 H265 反而误导。
                     }
                     .padding(.horizontal, 7)
                     .padding(.vertical, 5)

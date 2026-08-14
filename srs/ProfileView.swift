@@ -529,27 +529,19 @@ struct ProfileView: View {
         }
     }
     
-    // MARK: - ⭐ §53.9「我的」页首行：未开通=注册时间 / 已开通=<等级>会员 + 开通时间
-    //
-    // 等级命名以总后台「会员管理」为准（1=高清 2=超清 3=超高清 4=超高帧），
-    // 与 levelDisplayText 同一套口径。**不用后端 activationLevelName**——那个给的是
-    // 「标清/高清/超清/4K」的老命名，与产品/PC/档位口径不一致（后端 DeviceBindingService 里也标注了这点）。
+    // MARK: - ⭐ 2026-08-14 aihj：恢复老幻境2逻辑——「注册时间」行不随开通会员变化，
+    //   开通前后一律显示「注册时间 + 注册日期」（主线 §53.9/§53.15 的「<等级> + 注册成功时间」样式不要）。
     private var isMemberActivated: Bool {
         UserDefaults.standard.bool(forKey: "activated")
     }
-    /// ⭐ §53.15：等级名**不带"会员"二字**（超高清会员 → 超高清），只显示等级本身。
     private var membershipRowTitle: String {
-        isMemberActivated ? levelDisplayText : "注册时间"
+        "注册时间"
     }
-    /// ⭐ §53.15：已开通时副标题是「注册成功时间 <注册日期>」。
-    ///   **刻意不显示"开通时间"**：App Store 审核对"开通/付费"类信息敏感，这里只呈现账号注册时间，
-    ///   不暴露任何与购买/激活时点相关的内容。未开通时保持原样（纯注册时间）。
     private var membershipRowSubtitle: String {
-        let created = formatDate(viewModel.userProfile?.createdAt)
-        return isMemberActivated ? "注册成功时间 " + created : created
+        formatDate(viewModel.userProfile?.createdAt)
     }
     private var membershipRowIcon: String {
-        isMemberActivated ? levelIcon : "clock"
+        "clock"
     }
 
     private var settingsListView: some View {
@@ -563,8 +555,7 @@ struct ProfileView: View {
     
     private var settingsSection1: some View {
         VStack(spacing: 0) {
-            // ⭐ §53.9 / §53.15：开通会员后这一行显示「<等级> + 注册成功时间」（等级名不带"会员"
-            //   二字，且**不显示开通时间**——审核对付费/开通信息敏感）；未开通时保持「注册时间」原样。
+            // ⭐ 2026-08-14 aihj：恢复老幻境2逻辑——开通会员后这一行也保持「注册时间」原样
             ProfileRowView(icon: membershipRowIcon,
                            title: membershipRowTitle,
                            subtitle: membershipRowSubtitle,
