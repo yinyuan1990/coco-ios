@@ -95,7 +95,7 @@
 		2C4E72E62FC5502200BC4D30 /* lookup_soft_elegance_2.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = lookup_soft_elegance_2.png; sourceTree = "<group>"; };
 		2C4E72E72FC5502300BC4D30 /* lookup_miss_etikate.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = lookup_miss_etikate.png; sourceTree = "<group>"; };
 		2C5867D12FE95A0C00624BF2 /* SRTManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SRTManager.swift; sourceTree = "<group>"; };
-		2C596C542E58E22500C94789 /* 金凤凰.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "金凤凰.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		2C596C542E58E22500C94789 /* 幻境2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "幻境2.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2C596C572E58E22500C94789 /* srsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = srsApp.swift; sourceTree = "<group>"; };
 		2C596C592E58E22500C94789 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2C596C5B2E58E22600C94789 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -195,7 +195,7 @@
 		2C596C552E58E22500C94789 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				2C596C542E58E22500C94789 /* 金凤凰.app */,
+				2C596C542E58E22500C94789 /* 幻境2.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -248,9 +248,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		2C596C532E58E22500C94789 /* 金凤凰 */ = {
+		2C596C532E58E22500C94789 /* 幻境2 */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 2C596C622E58E22600C94789 /* Build configuration list for PBXNativeTarget "金凤凰" */;
+			buildConfigurationList = 2C596C622E58E22600C94789 /* Build configuration list for PBXNativeTarget "幻境2" */;
 			buildPhases = (
 				2C596C502E58E22500C94789 /* Sources */,
 				2C596C512E58E22500C94789 /* Frameworks */,
@@ -260,7 +260,7 @@
 			);
 			dependencies = (
 			);
-			name = "金凤凰";
+			name = "幻境2";
 			packageProductDependencies = (
 				2CB8FA522E73FAFC00F90666 /* SwiftStomp */,
 				2C5B004F2E90D20800755FBF /* WebRTC */,
@@ -268,7 +268,7 @@
 				2C5867CF2FE959F000624BF2 /* SRTHaishinKit */,
 			);
 			productName = srs;
-			productReference = 2C596C542E58E22500C94789 /* 金凤凰.app */;
+			productReference = 2C596C542E58E22500C94789 /* 幻境2.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -304,7 +304,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				2C596C532E58E22500C94789 /* 金凤凰 */,
+				2C596C532E58E22500C94789 /* 幻境2 */,
 			);
 		};
 /* End PBXProject section */
@@ -583,7 +583,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		2C596C622E58E22600C94789 /* Build configuration list for PBXNativeTarget "金凤凰" */ = {
+		2C596C622E58E22600C94789 /* Build configuration list for PBXNativeTarget "幻境2" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				2C596C632E58E22600C94789 /* Debug */,
