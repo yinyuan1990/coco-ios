@@ -385,12 +385,15 @@ struct RegisterView: View {
     
     // MARK: - 方法
     
-    // ⭐ 自动生成账号：hj + 设备ID哈希前8位 = 10位字母数字（满足后端 ^[a-zA-Z0-9]{8,12}$）
+    // ⭐ 自动生成账号：纯数字8位，不足位数前面自动补0（如 00000123）
+    //   设备ID哈希前12位换算成数字取模1亿 → 满足后端 ^[a-zA-Z0-9]{8,12}$
     //   由设备ID确定性推导 → 同一台设备永远生成同一个账号，卸载重装不变，绑定本机
     private func generateUsername() -> String {
         let hash = deviceId.sha256Hash()
-        let username = "hj" + hash.prefix(8)
-        print("🎲 自动生成账号: \(username) (设备ID推导，卸载重装不变)")
+        let slice = String(hash.prefix(12))
+        let number = UInt64(slice, radix: 16) ?? 0
+        let username = String(format: "%08d", number % 100_000_000)
+        print("🎲 自动生成账号: \(username) (设备ID推导，8位数字不足补0，卸载重装不变)")
         return username
     }
     
