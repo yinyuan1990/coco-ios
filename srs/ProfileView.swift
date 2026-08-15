@@ -585,10 +585,7 @@ struct ProfileView: View {
             }
             Divider().padding(.leading, 60)
             
-            ProfileRowView(icon: "person.badge.minus", title: "注销账号", showArrow: true) {
-                handleDeleteAccountAction()
-            }
-            Divider().padding(.leading, 60)
+            // ⭐ 2026-08-15 需求：去掉「注销账号」入口（handleDeleteAccountAction 及后端接口保留，仅摘入口）
         }
     }
     
