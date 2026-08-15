@@ -73,9 +73,11 @@ struct RegisterView: View {
     @State private var recoveryUsername: String = ""
     @State private var recoveryNickname: String = ""
     
-    // 用户输入
+    // ⭐ 2026-08-15 一键注册：账号/昵称不再手动输入，由设备ID确定性推导（见 onAppear）。
+    //   设备ID存 Keychain 卸载重装不变 → 推导出的账号/昵称也不变，天然绑定本机、生成后不可修改。
+    //   用户只需输入登录密码和二级密码，其余注册逻辑（接口/密保默认值/已注册恢复引导）全部不变。
     @State private var username = ""
-    @State private var nickname = ""  // 🔥 新增昵称字段
+    @State private var nickname = ""
     @State private var password = ""
     @State private var secondaryPassword = ""
     
@@ -139,7 +141,7 @@ struct RegisterView: View {
                                         .foregroundColor(.blue)
                                         .padding(.top, 10)
                                     
-                                    Text("请填写注册信息")
+                                    Text("账号昵称已自动生成，只需设置密码")
                                         .font(.system(size: 14))
                                         .foregroundColor(.secondary)
                                 }
@@ -147,55 +149,36 @@ struct RegisterView: View {
                                 
                                 // 基本信息
                                 VStack(spacing: 15) {
-                                    // 用户名（账号）- 8-12位，无自动生成
+                                    // ⭐ 账号 - 由设备ID自动生成，只读展示，生成后不可修改（绑定本机）
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("账号（必填）")
+                                        Text("账号（自动生成）")
                                             .font(.system(size: 14, weight: .medium))
                                             .foregroundColor(.secondary)
                                         
-                                        TextField("请输入8-12位字母或数字", text: $username)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                            .autocapitalization(.none)
-                                            .disableAutocorrection(true)
-                                            .onChange(of: username) { newValue in
-                                                // 限制为12位
-                                                if newValue.count > 12 {
-                                                    username = String(newValue.prefix(12))
-                                                }
-                                            }
+                                        Text(username.isEmpty ? "自动生成中..." : username)
+                                            .font(.system(size: 16, weight: .medium))
+                                            .foregroundColor(.primary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 10)
+                                            .background(Color(.systemGray6))
+                                            .cornerRadius(8)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(Color(.systemGray4), lineWidth: 1)
+                                            )
                                         
-                                        Text("8-12位字母或数字组合，全局唯一")
+                                        Text("由本机自动生成并绑定此设备，卸载重装保持不变")
                                             .font(.system(size: 12))
                                             .foregroundColor(.gray)
                                     }
                                     
-                                    // 昵称 - 自动生成，不可手动输入
+                                    // ⭐ 昵称 - 由设备ID自动生成，只读展示，生成后不可修改
                                     VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Text("昵称（自动生成）")
-                                                .font(.system(size: 14, weight: .medium))
-                                                .foregroundColor(.secondary)
-                                            
-                                            Spacer()
-                                            
-                                            Button(action: {
-                                                nickname = generateNickname()
-                                            }) {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "arrow.clockwise")
-                                                        .font(.system(size: 12))
-                                                    Text("换一个")
-                                                        .font(.system(size: 12))
-                                                }
-                                                .foregroundColor(.blue)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 6)
-                                                .background(Color.blue.opacity(0.1))
-                                                .cornerRadius(8)
-                                            }
-                                        }
+                                        Text("昵称（自动生成）")
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(.secondary)
                                         
-                                        // 只读显示昵称，不允许编辑
                                         Text(nickname.isEmpty ? "自动生成中..." : nickname)
                                             .font(.system(size: 16))
                                             .foregroundColor(.primary)
@@ -209,7 +192,7 @@ struct RegisterView: View {
                                                     .stroke(Color(.systemGray4), lineWidth: 1)
                                             )
                                         
-                                        Text("系统自动生成，点击「换一个」更换")
+                                        Text("系统自动生成，生成后不可修改")
                                             .font(.system(size: 12))
                                             .foregroundColor(.gray)
                                     }
@@ -265,7 +248,7 @@ struct RegisterView: View {
                                             .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                             .scaleEffect(0.8)
                                     }
-                                    Text(isRegistering ? "注册中..." : "立即注册")
+                                    Text(isRegistering ? "注册中..." : "一键注册")
                                         .font(.system(size: 18, weight: .semibold))
                                         .foregroundColor(.white)
                                 }
@@ -363,7 +346,11 @@ struct RegisterView: View {
             LocalWebView(fileName: "privacy_policy", title: "隐私政策")
         }
         .onAppear {
-            // 🔥 自动生成昵称
+            // ⭐ 一键注册：账号/昵称由设备ID确定性推导（同一台设备永远生成同一组，
+            //   卸载重装后 Keychain 里的设备ID不变 → 账号/昵称也不变）
+            if username.isEmpty {
+                username = generateUsername()
+            }
             if nickname.isEmpty {
                 nickname = generateNickname()
             }
@@ -398,17 +385,23 @@ struct RegisterView: View {
     
     // MARK: - 方法
     
-    // 🔥 自动生成昵称（时间戳后3位 + 随机3位，确保唯一性）
+    // ⭐ 自动生成账号：hj + 设备ID哈希前8位 = 10位字母数字（满足后端 ^[a-zA-Z0-9]{8,12}$）
+    //   由设备ID确定性推导 → 同一台设备永远生成同一个账号，卸载重装不变，绑定本机
+    private func generateUsername() -> String {
+        let hash = deviceId.sha256Hash()
+        let username = "hj" + hash.prefix(8)
+        print("🎲 自动生成账号: \(username) (设备ID推导，卸载重装不变)")
+        return username
+    }
+    
+    // ⭐ 自动生成昵称：设备ID哈希第9-16位换算成6位数字
+    //   同样由设备ID确定性推导，卸载重装不变（原时间戳+随机数方案每次都变，已废弃）
     private func generateNickname() -> String {
-        // 获取纳秒级时间戳后3位
-        let nanoseconds = DispatchTime.now().uptimeNanoseconds
-        let timePart = String("\(nanoseconds)".suffix(3))
-        
-        // 生成3位随机数 (000-999)
-        let randomPart = String(format: "%03d", Int.random(in: 0...999))
-        
-        let nickname = timePart + randomPart
-        print("🎲 自动生成昵称: \(nickname) (时间:\(timePart) + 随机:\(randomPart))")
+        let hash = deviceId.sha256Hash()
+        let slice = String(hash.dropFirst(8).prefix(8))
+        let number = UInt64(slice, radix: 16) ?? 0
+        let nickname = String(format: "%06d", number % 1_000_000)
+        print("🎲 自动生成昵称: \(nickname) (设备ID推导，卸载重装不变)")
         return nickname
     }
     

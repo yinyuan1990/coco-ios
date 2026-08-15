@@ -196,7 +196,7 @@ struct MonitorLoginView: View {
                                 Button(action: {
                                     showRegisterView = true
                                 }) {
-                                    Text("点击注册")
+                                    Text("一键注册")
                                         .font(.system(size: 14, weight: .medium))
                                         .foregroundColor(.blue)
                                 }
