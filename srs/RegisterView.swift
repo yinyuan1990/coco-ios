@@ -149,26 +149,27 @@ struct RegisterView: View {
                                 }
                                 .padding(.top, 10)
                                 
-                                // 基本信息
-                                VStack(spacing: 15) {
+                                // 基本信息（⭐ 2026-08-15 风格对齐登录页：图标+标签、灰底圆角12输入框，去掉方框描边）
+                                VStack(spacing: 20) {
                                     // ⭐ 账号 - 由设备ID自动生成，只读展示，生成后不可修改（绑定本机）
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("账号（自动生成）")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                        HStack {
+                                            Image(systemName: "person")
+                                                .foregroundColor(.gray)
+                                                .frame(width: 20)
+                                            Text("账号（自动生成）")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.primary)
+                                        }
                                         
                                         Text(username.isEmpty ? "自动生成中..." : username)
                                             .font(.system(size: 16, weight: .medium))
                                             .foregroundColor(.primary)
                                             .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 10)
-                                            .background(Color(.systemGray6))
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color(.systemGray4), lineWidth: 1)
-                                            )
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 16)
+                                            .background(Color.gray.opacity(0.15))
+                                            .cornerRadius(12)
                                         
                                         Text("由本机自动生成并绑定此设备，卸载重装保持不变")
                                             .font(.system(size: 12))
@@ -177,22 +178,23 @@ struct RegisterView: View {
                                     
                                     // ⭐ 昵称 - 由设备ID自动生成，只读展示，生成后不可修改
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("昵称（自动生成）")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                        HStack {
+                                            Image(systemName: "tag")
+                                                .foregroundColor(.gray)
+                                                .frame(width: 20)
+                                            Text("昵称（自动生成）")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.primary)
+                                        }
                                         
                                         Text(nickname.isEmpty ? "自动生成中..." : nickname)
                                             .font(.system(size: 16))
                                             .foregroundColor(.primary)
                                             .frame(maxWidth: .infinity, alignment: .leading)
-                                            .padding(.horizontal, 10)
-                                            .padding(.vertical, 10)
-                                            .background(Color(.systemGray6))
-                                            .cornerRadius(8)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color(.systemGray4), lineWidth: 1)
-                                            )
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 16)
+                                            .background(Color.gray.opacity(0.15))
+                                            .cornerRadius(12)
                                         
                                         Text("系统自动生成，生成后不可修改")
                                             .font(.system(size: 12))
@@ -201,26 +203,42 @@ struct RegisterView: View {
                                     
                                     // 登录密码
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("登录密码（必填）")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                        HStack {
+                                            Image(systemName: "lock")
+                                                .foregroundColor(.gray)
+                                                .frame(width: 20)
+                                            Text("登录密码")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.primary)
+                                        }
                                         
-                                        SecureField("6-20位密码", text: $password)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                                        
-                                        Text("密码长度6-20位")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.gray)
+                                        SecureField("请输入6-20位密码", text: $password)
+                                            .textFieldStyle(PlainTextFieldStyle())
+                                            .font(.system(size: 16))
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 16)
+                                            .background(Color.gray.opacity(0.1))
+                                            .cornerRadius(12)
                                     }
                                     
                                     // 二级密码
                                     VStack(alignment: .leading, spacing: 8) {
-                                        Text("二级密码（必填）")
-                                            .font(.system(size: 14, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                        HStack {
+                                            Image(systemName: "lock.shield")
+                                                .foregroundColor(.gray)
+                                                .frame(width: 20)
+                                            Text("二级密码")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.primary)
+                                        }
                                         
-                                        SecureField("6-20位二级密码", text: $secondaryPassword)
-                                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                                        SecureField("请输入6-20位二级密码", text: $secondaryPassword)
+                                            .textFieldStyle(PlainTextFieldStyle())
+                                            .font(.system(size: 16))
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 16)
+                                            .background(Color.gray.opacity(0.1))
+                                            .cornerRadius(12)
                                         
                                         Text("用于设备绑定验证，可通过密保问题找回")
                                             .font(.system(size: 12))
