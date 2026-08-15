@@ -80,6 +80,8 @@ struct RegisterView: View {
     @State private var nickname = ""
     @State private var password = ""
     @State private var secondaryPassword = ""
+    // ⭐ 撞号自动换盐重试：0=设备ID直接推导；撞号后 +1 重新推导下一个候选号（最多重试5次）
+    @State private var usernameSalt = 0
     
     // 密保问题和答案（默认答案为1、2、3）
     @State private var question1 = "您的出生年月日是？"
@@ -388,12 +390,17 @@ struct RegisterView: View {
     // ⭐ 自动生成账号：纯数字8位，不足位数前面自动补0（如 00000123）
     //   设备ID哈希前12位换算成数字取模1亿 → 满足后端 ^[a-zA-Z0-9]{8,12}$
     //   由设备ID确定性推导 → 同一台设备永远生成同一个账号，卸载重装不变，绑定本机
-    private func generateUsername() -> String {
-        let hash = deviceId.sha256Hash()
+    //   ⭐ 防重复：唯一性由后端注册接口的全局唯一校验兜底。若撞号（别的设备先占了这个号），
+    //     后端报"账号已存在"，前端自动换盐（deviceId#1、#2…）重新推导下一个候选号重试注册，
+    //     见 proceedWithRegister 的失败分支。卸载重装不受影响——重装后注册会命中
+    //     "设备已注册"，后端返回原账号走恢复流程直接登录。
+    private func generateUsername(salt: Int = 0) -> String {
+        let seed = salt == 0 ? deviceId : "\(deviceId)#\(salt)"
+        let hash = seed.sha256Hash()
         let slice = String(hash.prefix(12))
         let number = UInt64(slice, radix: 16) ?? 0
         let username = String(format: "%08d", number % 100_000_000)
-        print("🎲 自动生成账号: \(username) (设备ID推导，8位数字不足补0，卸载重装不变)")
+        print("🎲 自动生成账号: \(username) (设备ID推导 salt=\(salt)，8位数字不足补0)")
         return username
     }
     
@@ -575,6 +582,19 @@ struct RegisterView: View {
                         recoveryNickname = regErr.existingNickname ?? ""
                         showRecoveryAlert = true
                         print("🔁 [Recovery] 检测到设备已注册账号: \(recoveryUsername), 弹恢复对话框")
+                    } else if error.localizedDescription.contains("已存在")
+                                || error.localizedDescription.contains("已被占用")
+                                || error.localizedDescription.lowercased().contains("exist") {
+                        // ⭐ 撞号（自动生成的账号被别的设备先注册了）：换盐重新推导下一个候选号自动重试
+                        if usernameSalt < 5 {
+                            usernameSalt += 1
+                            username = generateUsername(salt: usernameSalt)
+                            print("🔁 [撞号重试] 账号已被占用，换盐 salt=\(usernameSalt) 重新生成: \(username)")
+                            isRegistering = true
+                            proceedWithRegister()
+                        } else {
+                            showAlert(message: "注册失败：自动生成账号多次重复，请稍后重试")
+                        }
                     } else {
                         showAlert(message: "注册失败：\(error.localizedDescription)")
                     }
