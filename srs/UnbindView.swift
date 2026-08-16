@@ -13,7 +13,8 @@ struct UnbindView: View {
     let binding: APIService.BindingItem
     let onUnbindSuccess: () -> Void
     
-    @State private var secondaryPassword: String = ""
+    // ⭐ 2026-08-16 需求：解绑不再手输绑定码，自动用默认二级密码 123456
+    @State private var secondaryPassword: String = "123456"
     @State private var isUnbinding: Bool = false
     @State private var showResultAlert: Bool = false
     @State private var resultMessage: String = ""
@@ -64,20 +65,7 @@ struct UnbindView: View {
                     .cornerRadius(10)
                     .padding(.horizontal, 20)
                     
-                    // 绑定码输入
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("绑定码")
-                            .font(.system(size: 14))
-                            .foregroundColor(Color(hex: "808080"))
-                        
-                        SecureField("请输入绑定码", text: $secondaryPassword)
-                            .textFieldStyle(.plain)
-                            .padding()
-                            .background(Color(hex: "F4F4F8"))
-                            .cornerRadius(10)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 24)
+                    // ⭐ 2026-08-16 需求：绑定码输入移除，自动用默认二级密码 123456
                     
                     Spacer()
                     
@@ -93,11 +81,11 @@ struct UnbindView: View {
                             }
                         }
                         .frame(width: 160, height: 46)
-                        .background(secondaryPassword.isEmpty ? Color(hex: "CCCCCC") : Color.red)
+                        .background(isUnbinding ? Color(hex: "CCCCCC") : Color.red)
                         .foregroundColor(Color(hex: "FAFAFA"))
                         .cornerRadius(10)
                     }
-                    .disabled(secondaryPassword.isEmpty || isUnbinding)
+                    .disabled(isUnbinding)
                     .padding(.bottom, 40)
                 }
             }

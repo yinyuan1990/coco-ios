@@ -20,7 +20,8 @@ struct DeviceBindingQRScannerView: View {
     @State private var bindingError: String?
     
     // 🔥 绑定码输入
-    @State private var secondaryPassword: String = ""
+    // ⭐ 2026-08-16 需求：绑定不再手输绑定码，自动用默认二级密码 123456（注册时即默认 123456）
+    @State private var secondaryPassword: String = "123456"
     
     // 扫描框尺寸
     private let scanBoxSize: CGFloat = 260
@@ -45,7 +46,7 @@ struct DeviceBindingQRScannerView: View {
                             // 返回扫码界面
                             showConfirm = false
                             scannedCode = ""
-                            secondaryPassword = ""  // 🔥 重置绑定码
+                            secondaryPassword = "123456"  // ⭐ 重置回默认绑定码
                             isScanning = true
                         } else {
                             dismiss()
@@ -162,22 +163,7 @@ struct DeviceBindingQRScannerView: View {
             .padding(.vertical, 16)
             .background(Color(hex: "F4F4F8"))
             
-            // 绑定码输入区域
-            VStack(alignment: .leading, spacing: 12) {
-                Text("请输入绑定码")
-                    .font(.system(size: 14))
-                    .foregroundColor(Color(hex: "808080"))
-                
-                SecureField("绑定码", text: $secondaryPassword)
-                    .textFieldStyle(PlainTextFieldStyle())
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(Color(hex: "F4F4F8"))
-                    .cornerRadius(10)
-                    .foregroundColor(Color(hex: "1A1A1A"))
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 24)
+            // ⭐ 2026-08-16 需求：绑定码输入区域移除，自动用默认二级密码 123456
             
             Spacer()
             
@@ -198,11 +184,7 @@ struct DeviceBindingQRScannerView: View {
                             .frame(width: 160, height: 46)
                     }
                 }
-                .background(
-                    secondaryPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isBinding
-                    ? Color(hex: "CCCCCC")
-                    : Color.blue
-                )
+                .background(isBinding ? Color(hex: "CCCCCC") : Color.blue)
                 .cornerRadius(10)
                 .disabled(isBinding)
                 
@@ -211,7 +193,7 @@ struct DeviceBindingQRScannerView: View {
                     // 返回扫码界面
                     showConfirm = false
                     scannedCode = ""
-                    secondaryPassword = ""  // 🔥 重置绑定码
+                    secondaryPassword = "123456"  // ⭐ 重置回默认绑定码
                     isScanning = true
                 }) {
                     Text("重新扫码")

@@ -849,7 +849,8 @@ struct BindingConfirmView: View {
     let onCancel: () -> Void
     
     // 状态变量
-    @State private var secondaryPassword: String = ""
+    // ⭐ 2026-08-16 需求：绑定确认不再手输绑定码，自动用默认二级密码 123456
+    @State private var secondaryPassword: String = "123456"
     @State private var isLoading: Bool = false
     @State private var currentStep: BindingStep = .ready
     @State private var statusMessage: String = ""
@@ -878,7 +879,7 @@ struct BindingConfirmView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                         
-                        Text("请确认绑定信息并输入绑定码")
+                        Text("请确认绑定信息")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
@@ -910,30 +911,7 @@ struct BindingConfirmView: View {
                     .cornerRadius(12)
                     .padding(.horizontal, 20)
                     
-                    // 绑定码输入区域
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("绑定码")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        SecureField("请输入您的绑定码", text: $secondaryPassword)
-                            .textFieldStyle(PlainTextFieldStyle())
-                            .padding()
-                            .background(Color.white)
-                            .cornerRadius(10)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                            )
-                            .disabled(isLoading)
-                        
-                        Text("绑定码用于验证绑定操作的安全性")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    // ⭐ 2026-08-16 需求：绑定码输入区域移除，自动用默认二级密码 123456
                     
                     // 状态显示区域
                     if !statusMessage.isEmpty || errorMessage != nil {
