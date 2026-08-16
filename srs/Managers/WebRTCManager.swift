@@ -2839,6 +2839,10 @@ final class WebRTCManager: NSObject, ObservableObject {
         }
 
         let want: AVCaptureVideoOrientation = .landscapeRight
+        // ⭐ 2026-08-16 修「切分辨率画面闪转」：把期望方向/镜像同步给 capturer，
+        //   configureSession 重建连接时直接生效，不再有竖屏过渡帧。
+        capturer?.desiredOrientation = want
+        capturer?.desiredMirrored = streamMirrored
         var applied = 0
         for conn in session.connections {
             if conn.isVideoOrientationSupported {
