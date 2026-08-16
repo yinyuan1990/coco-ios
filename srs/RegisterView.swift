@@ -78,8 +78,10 @@ struct RegisterView: View {
     //   用户只需输入登录密码和二级密码，其余注册逻辑（接口/密保默认值/已注册恢复引导）全部不变。
     @State private var username = ""
     @State private var nickname = ""
-    @State private var password = ""
-    @State private var secondaryPassword = ""
+    // ⭐ 2026-08-16 需求：密码/二级密码也不输了，全程不可见，默认 123456
+    //   （登录页同步改为「账号一键登录」，密码自动用保存值或 123456）
+    @State private var password = "123456"
+    @State private var secondaryPassword = "123456"
     // ⭐ 撞号自动换盐重试：0=设备ID直接推导；撞号后 +1 重新推导下一个候选号（最多重试5次）
     @State private var usernameSalt = 0
     
@@ -143,7 +145,7 @@ struct RegisterView: View {
                                         .foregroundColor(.blue)
                                         .padding(.top, 10)
                                     
-                                    Text("账号昵称已自动生成，只需设置密码")
+                                    Text("账号昵称已自动生成，无需设置密码")
                                         .font(.system(size: 14))
                                         .foregroundColor(.secondary)
                                 }
@@ -201,49 +203,8 @@ struct RegisterView: View {
                                             .foregroundColor(.gray)
                                     }
                                     
-                                    // 登录密码
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Image(systemName: "lock")
-                                                .foregroundColor(.gray)
-                                                .frame(width: 20)
-                                            Text("登录密码")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(.primary)
-                                        }
-                                        
-                                        SecureField("请输入6-20位密码", text: $password)
-                                            .textFieldStyle(PlainTextFieldStyle())
-                                            .font(.system(size: 16))
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 16)
-                                            .background(Color.gray.opacity(0.1))
-                                            .cornerRadius(12)
-                                    }
-                                    
-                                    // 二级密码
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        HStack {
-                                            Image(systemName: "lock.shield")
-                                                .foregroundColor(.gray)
-                                                .frame(width: 20)
-                                            Text("二级密码")
-                                                .font(.system(size: 16, weight: .medium))
-                                                .foregroundColor(.primary)
-                                        }
-                                        
-                                        SecureField("请输入6-20位二级密码", text: $secondaryPassword)
-                                            .textFieldStyle(PlainTextFieldStyle())
-                                            .font(.system(size: 16))
-                                            .padding(.horizontal, 16)
-                                            .padding(.vertical, 16)
-                                            .background(Color.gray.opacity(0.1))
-                                            .cornerRadius(12)
-                                        
-                                        Text("用于设备绑定验证，可通过密保问题找回")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(.gray)
-                                    }
+                                    // ⭐ 2026-08-16 需求：登录密码/二级密码输入框移除，
+                                    //   两者默认 123456（见 @State 初始值），用户全程无感知
                                 }
                                 .padding(.horizontal, 30)
                                 
@@ -351,13 +312,14 @@ struct RegisterView: View {
         .alert("此设备已注册账号", isPresented: $showRecoveryAlert) {
             Button("用此账号登录") {
                 let displayUser = recoveryUsername
-                onRegisterSuccess?(displayUser, "")  // 密码留空, 用户在登录页手动输入
+                // ⭐ 2026-08-16：登录页已无密码输入，带默认密码 123456 回登录页一键登录
+                onRegisterSuccess?(displayUser, "123456")
                 dismiss()
             }
             Button("取消", role: .cancel) { }
         } message: {
             let nameHint = recoveryNickname.isEmpty ? "" : "（昵称: \(recoveryNickname)）"
-            Text("此设备已绑定账号「\(recoveryUsername)」\(nameHint)\n\n请用该账号登录, 然后输入对应密码。\n如已忘记密码, 请联系客服解绑此设备。")
+            Text("此设备已绑定账号「\(recoveryUsername)」\(nameHint)\n\n点击下方按钮直接用该账号一键登录。\n如无法登录, 请联系客服解绑此设备。")
         }
         .sheet(isPresented: $showUserAgreement) {
             LocalWebView(fileName: "user_agreement", title: "用户协议")

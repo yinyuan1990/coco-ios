@@ -38,8 +38,9 @@ struct MonitorLoginView: View {
     
     @State private var username: String = ""           // 显示用（有本地账号时显示前8位）
     @State private var fullUsername: String = ""       // 完整账号（用于登录）
+    // ⭐ 2026-08-16：登录页无密码输入框。password 只承载「本地保存的密码」，
+    //   无保存值时登录自动用默认密码 123456（新注册账号的密码就是 123456）
     @State private var password: String = ""
-    @State private var isPasswordVisible: Bool = false
     @State private var rememberPassword: Bool = true   // coco/aihj：老版无「记住密码」开关，登录成功一律保存账号（对齐老 iOS）
     // ⭐ §53.4-定稿：下面三个选择态**已不再驱动任何 UI**（线路/编码改为系统决策）。
     //   仅与保留下来的 `connectModeChip` / `CodecOptionChips` 一起留着，便于一键回滚到"用户手选"。
@@ -129,41 +130,8 @@ struct MonitorLoginView: View {
                                 .font(.system(size: 16))
                         }
                         
-                        // 密码输入框
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "lock")
-                                    .foregroundColor(.gray)
-                                    .frame(width: 20)
-                                Text("密码")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.primary)
-                            }
-                            
-                            HStack {
-                                if isPasswordVisible {
-                                    TextField("请输入您的密码", text: $password)
-                                        .textFieldStyle(PlainTextFieldStyle())
-                                        .font(.system(size: 16))
-                                } else {
-                                    SecureField("请输入您的密码", text: $password)
-                                        .textFieldStyle(PlainTextFieldStyle())
-                                        .font(.system(size: 16))
-                                }
-                                
-                                Button(action: {
-                                    isPasswordVisible.toggle()
-                                }) {
-                                    Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                                        .foregroundColor(.gray)
-                                        .font(.system(size: 16))
-                                }
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 16)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(12)
-                        }
+                        // ⭐ 2026-08-16 需求：登录不再输密码——密码输入框移除，
+                        //   账号直接一键登录（密码自动用本地保存值，无保存值用默认 123456）
                         
                         // 登录按钮（老样式：蓝色圆角）
                         Button(action: {
@@ -465,7 +433,7 @@ struct MonitorLoginView: View {
     private func getLoginButtonText() -> String {
         switch loginStep {
         case .idle:
-            return "立即登入"
+            return "一键登录"
         case .authenticating:
             return "验证中..."
         case .connecting:
@@ -473,7 +441,7 @@ struct MonitorLoginView: View {
         case .success:
             return "登录成功"
         case .failed:
-            return "立即登入"
+            return "一键登录"
         }
     }
     
@@ -513,11 +481,6 @@ struct MonitorLoginView: View {
             return
         }
         
-        guard !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            showAlert(message: "请输入密码")
-            return
-        }
-        
         isLoading = true
         loginStep = .authenticating
         
@@ -530,9 +493,18 @@ struct MonitorLoginView: View {
                 } else {
                     loginUsername = username      // 用户手动输入的，传什么就是什么
                 }
+                // ⭐ 2026-08-16 一键登录：密码不再由用户输入——
+                //   账号未被改动且本地有保存密码 → 用保存的；否则用默认密码 123456
+                let loginPassword: String
+                if hasLocalAccount && username == String(fullUsername.prefix(8)),
+                   !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    loginPassword = password
+                } else {
+                    loginPassword = "123456"
+                }
                 let loginResponse = try await APIService.shared.login(
                     username: loginUsername.trimmingCharacters(in: .whitespacesAndNewlines),
-                    password: password.trimmingCharacters(in: .whitespacesAndNewlines)
+                    password: loginPassword.trimmingCharacters(in: .whitespacesAndNewlines)
                 )
                 
                 await MainActor.run {
@@ -608,12 +580,13 @@ struct MonitorLoginView: View {
                 await MainActor.run {
                     WebSocketManager.shared.connect(deviceId: loginResponse.deviceId)
                     
-                    // 根据"记住密码"选项保存账号
+                    // 根据"记住密码"选项保存账号（⭐ 2026-08-16：存实际登录用的密码，
+                    //   首登无保存值时存的就是默认密码 123456）
                     if rememberPassword {
                         let savedAccountInfo = SavedAccountInfo(
                             collectorAccount: loginResponse.username,
                             controllerAccount: "",
-                            password: password,
+                            password: loginPassword,
                             deviceId: loginResponse.deviceId,
                             savedDate: Date()
                         )

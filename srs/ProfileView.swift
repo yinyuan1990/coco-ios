@@ -580,10 +580,8 @@ struct ProfileView: View {
             }
             Divider().padding(.leading, 60)
             
-            ProfileRowView(icon: "lock", title: "修改密码", showArrow: true) {
-                handleChangePasswordAction()
-            }
-            Divider().padding(.leading, 60)
+            // ⭐ 2026-08-16 需求：登录改为账号一键登录（密码全程不可见，默认 123456），
+            //   「修改密码」入口移除（ChangePasswordView/handleChangePasswordAction 及接口保留，仅摘入口）
             
             // ⭐ 2026-08-15 需求：去掉「注销账号」入口（handleDeleteAccountAction 及后端接口保留，仅摘入口）
         }
