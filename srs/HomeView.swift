@@ -86,16 +86,13 @@ struct HomeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                // ⭐ 2026-08-17 需求：右上角只留「我的」文字，去掉设置齿轮图标
                 Button(action: {
                     showingProfile = true
                 }) {
-                    HStack(spacing: 4) {
-                        Text("我的")
-                            .font(.system(size: 15))
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16))
-                    }
-                    .foregroundColor(.primary)
+                    Text("我的")
+                        .font(.system(size: 15))
+                        .foregroundColor(.primary)
                 }
             }
         }

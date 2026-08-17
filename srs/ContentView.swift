@@ -866,26 +866,14 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        // 右边 - 设置 + 我的
-                        HStack(spacing: 12) {
-                            // 设置图标
-                            Button(action: {
-                                showingProfile = true
-                            }) {
-                                Image(systemName: "gearshape")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(Color(hex: "1A1A1A"))
-                                    .frame(width: 28, height: 28)
-                            }
-                            
-                            // 我的
-                            Button(action: {
-                                showingProfile = true
-                            }) {
-                                Text("我的")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(Color(hex: "1A1A1A"))
-                            }
+                        // 右边 - 只留「我的」文字入口（⭐ 2026-08-17 需求：去掉设置齿轮图标）
+                        Button(action: {
+                            showingProfile = true
+                        }) {
+                            Text("我的")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(Color(hex: "1A1A1A"))
+                                .frame(height: 28)
                         }
                     }
                     .padding(.horizontal, 16)
