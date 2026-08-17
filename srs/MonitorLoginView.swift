@@ -51,6 +51,9 @@ struct MonitorLoginView: View {
     @State private var alertMessage: String = ""
     @State private var showRegisterView: Bool = false
     @State private var hasLocalAccount: Bool = false
+    // ⭐ 2026-08-17 登录页不再输入账号：本地没存账号时按设备ID到服务器找回（老用户合并）
+    @State private var isFetchingAccount: Bool = false   // 正在按设备ID找回账号
+    @State private var accountRecovered: Bool = false    // 账号来自服务器找回（重装/老用户）
     
     @State private var isLoading: Bool = false
     @State private var isLoggedIn: Bool = false
@@ -108,27 +111,62 @@ struct MonitorLoginView: View {
                     
                     Spacer()
                     
-                    // 登录表单（老样式：带标签的灰底输入框）
+                    // ⭐ 2026-08-17 需求：登录页加 logo（用 App 图标），下方是应用名
+                    VStack(spacing: 14) {
+                        Image("app_logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 96, height: 96)
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .shadow(color: Color.black.opacity(0.15), radius: 10, y: 4)
+                        
+                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "幻境2")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.bottom, 36)
+                    
+                    // 登录表单
                     VStack(spacing: 20) {
-                        // 用户名输入框
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Image(systemName: "person")
+                        // ⭐ 2026-08-17 需求：账号输入框移除——账号只是形式，真正身份是设备ID。
+                        //   来源优先级：①本地保存（注册/上次登录） ②按设备ID到服务器找回（老用户/重装）
+                        //   ③都没有 → 引导一键注册。这里只做只读展示。
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(hasLocalAccount ? .blue : .gray)
+                            
+                            if isFetchingAccount {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("正在获取本机账号...")
+                                    .font(.system(size: 16))
                                     .foregroundColor(.gray)
-                                    .frame(width: 20)
-                                Text("用户名")
-                                    .font(.system(size: 16, weight: .medium))
+                            } else if hasLocalAccount {
+                                Text("账号 \(username)")
+                                    .font(.system(size: 17, weight: .semibold))
                                     .foregroundColor(.primary)
+                                if accountRecovered {
+                                    Text("已按设备找回")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(Color.green)
+                                        .cornerRadius(8)
+                                }
+                            } else {
+                                Text("本机还未注册账号")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.gray)
                             }
                             
-                            TextField("请输入您的用户名", text: $username)
-                                .textFieldStyle(PlainTextFieldStyle())
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 16)
-                                .background(hasLocalAccount ? Color.gray.opacity(0.15) : Color.gray.opacity(0.1))
-                                .cornerRadius(12)
-                                .font(.system(size: 16))
+                            Spacer()
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 16)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
                         
                         // ⭐ 2026-08-16 需求：登录不再输密码——密码输入框移除，
                         //   账号直接一键登录（密码自动用本地保存值，无保存值用默认 123456）
@@ -227,6 +265,10 @@ struct MonitorLoginView: View {
         }
         .onAppear {
             loadLocalAccountInfo()
+            // ⭐ 2026-08-17：本地没账号（重装/换机/老用户清数据）→ 按设备ID到服务器找回
+            if !hasLocalAccount {
+                fetchAccountByDevice()
+            }
             selectedConnectMode = ConnectModeOption.lastSelected  // 同步上次选择
             setupWebSocketNotificationListener()
             checkForceUpdate()   // ⭐ 强制更新检查（总后台「App更新配置」，公共接口）
@@ -242,7 +284,8 @@ struct MonitorLoginView: View {
         }) {
             RegisterView(onRegisterSuccess: { registeredUsername, registeredPassword in
                 print("✅ 注册成功回调: username=\(registeredUsername)")
-                self.username = registeredUsername
+                self.fullUsername = registeredUsername
+                self.username = String(registeredUsername.prefix(8))
                 self.password = registeredPassword
                 self.hasLocalAccount = true
             })
@@ -461,6 +504,47 @@ struct MonitorLoginView: View {
         }
     }
     
+    // ⭐ 2026-08-17 按设备ID找回账号（老用户合并的关键一步）：
+    //   设备ID才是真正身份，账号只是个挂在 users.device_id 上的形式编号。
+    //   老用户重装 App 后本地无账号，但后端 device_id 反查就能拿回原账号——
+    //   之后一键登录用默认密码 123456，后端 deviceId 兜底放行并把老密码归一。
+    private func fetchAccountByDevice() {
+        guard !hasLocalAccount, !isFetchingAccount else { return }
+        isFetchingAccount = true
+        Task {
+            defer { Task { @MainActor in isFetchingAccount = false } }
+            do {
+                let deviceId = DeviceIDManager.shared.getDeviceID()
+                let url = URL(string: "\(APIConfig.shared.baseURL)/api/auth/account-by-device")!
+                var req = URLRequest(url: url, timeoutInterval: 8)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = try JSONEncoder().encode(["deviceId": deviceId])
+                let (data, _) = try await URLSession.shared.data(for: req)
+                struct AccountByDeviceResponse: Decodable {
+                    let exists: Bool
+                    let username: String?
+                    let nickname: String?
+                }
+                let resp = try JSONDecoder().decode(AccountByDeviceResponse.self, from: data)
+                await MainActor.run {
+                    if resp.exists, let name = resp.username, !name.isEmpty {
+                        fullUsername = name
+                        username = String(name.prefix(8))
+                        hasLocalAccount = true
+                        accountRecovered = true
+                        print("🔁 [账号找回] 设备ID反查到账号: \(name)（老用户合并，密码走默认123456+后端兜底）")
+                    } else {
+                        print("📱 [账号找回] 该设备未注册过账号 → 引导一键注册")
+                    }
+                }
+            } catch {
+                // 查询失败不阻断（登录按钮点击时会重试），新设备照常走注册
+                print("⚠️ [账号找回] account-by-device 请求失败: \(error.localizedDescription)")
+            }
+        }
+    }
+    
     private func clearLocalAccount() {
         if AccountStorageManager.shared.clearAccountInfo() {
             username = ""
@@ -476,8 +560,14 @@ struct MonitorLoginView: View {
     }
     
     private func handleLogin() {
-        guard !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            showAlert(message: "请输入用户名")
+        // ⭐ 2026-08-17：账号不再由用户输入。没有账号（本地没存 + 设备ID也查不到）→ 引导注册
+        guard !fullUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            if isFetchingAccount {
+                showAlert(message: "正在获取本机账号，请稍候…")
+            } else {
+                fetchAccountByDevice()  // 可能是刚才网络失败，重试一次
+                showAlert(message: "本机还未注册账号，请点击下方「一键注册」")
+            }
             return
         }
         
@@ -486,22 +576,18 @@ struct MonitorLoginView: View {
         
         Task {
             do {
-                // 🔥 如果输入框的值跟本地前8位一致，用完整账号；否则用输入框的值（用户手动改过）
-                let loginUsername: String
-                if hasLocalAccount && username == String(fullUsername.prefix(8)) {
-                    loginUsername = fullUsername  // 本地账号未被修改，传完整账号
-                } else {
-                    loginUsername = username      // 用户手动输入的，传什么就是什么
-                }
+                // ⭐ 账号只是形式，登录一律用完整账号（本地保存的 or 按设备ID找回的）
+                let loginUsername = fullUsername
                 // ⭐ 2026-08-16 一键登录：密码不再由用户输入——
-                //   账号未被改动且本地有保存密码 → 用保存的；否则用默认密码 123456
+                //   本地有保存密码 → 用保存的；否则（含按设备找回的老账号）用默认密码 123456。
+                //   老账号密码不是 123456 也没关系：后端按 deviceId 匹配放行并把密码归一成 123456。
                 let loginPassword: String
-                if hasLocalAccount && username == String(fullUsername.prefix(8)),
-                   !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     loginPassword = password
                 } else {
                     loginPassword = "123456"
                 }
+                print("🔑 [一键登录] 账号=\(loginUsername) 来源=\(accountRecovered ? "设备找回" : "本地保存") 密码=\(password.isEmpty ? "默认123456" : "本地保存")")
                 let loginResponse = try await APIService.shared.login(
                     username: loginUsername.trimmingCharacters(in: .whitespacesAndNewlines),
                     password: loginPassword.trimmingCharacters(in: .whitespacesAndNewlines)
