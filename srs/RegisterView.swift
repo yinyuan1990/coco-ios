@@ -919,6 +919,26 @@ class DeviceIDManager {
     private var cachedDeviceID: String?
     
     private init() {}
+
+    // ⭐ §71 安装实例ID：首启随机 UUID，存 UserDefaults（与 Android SharedPreferences 同语义）。
+    //   deviceId 可被改机工具克隆成一样，但两台手机的 installId 必然不同——
+    //   登录/WS 连接都带上它，后端按 deviceId 单活：新登录抢占、克隆机被踢。
+    //   卸载重装会变：新安装登录即认领活跃位，属预期（等同换机）。
+    private var cachedInstallID: String?
+
+    func getInstallID() -> String {
+        if let cached = cachedInstallID { return cached }
+        let key = "install_instance_id"
+        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+            cachedInstallID = existing
+            return existing
+        }
+        let newID = UUID().uuidString.replacingOccurrences(of: "-", with: "").uppercased()
+        UserDefaults.standard.set(newID, forKey: key)
+        cachedInstallID = newID
+        print("📱 [InstallID] 🆕 生成安装实例ID: \(newID.prefix(8))...")
+        return newID
+    }
     
     /// 获取持久化设备ID
     /// 优先从 Keychain 读取（卸载重装后仍然存在）

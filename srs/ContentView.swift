@@ -631,6 +631,10 @@ struct ContentView: View {
     @State private var trialEndMessage: String = ""
     @State private var isTrialEnded: Bool = false
 
+    // ⭐ §71 被顶下线弹框（同 deviceId 在另一台手机登录 → 本机停推、回登录页）
+    @State private var showKickedAlert: Bool = false
+    @State private var kickedMessage: String = ""
+
     // ⭐ 需求#13（2026-07-31）：版本更新提示（登录响应带的最新版本 ≠ 本地版本 → 推流前弹一次，软提示）
     @State private var showUpdatePrompt: Bool = false
     @State private var updatePromptText: String = ""
@@ -1127,6 +1131,7 @@ struct ContentView: View {
             NotificationCenter.default.removeObserver(self, name: .resetPublishRequested, object: nil)
             NotificationCenter.default.removeObserver(self, name: .cameraSleepRequested, object: nil)
             NotificationCenter.default.removeObserver(self, name: .tryDisconnectRequested, object: nil)
+            NotificationCenter.default.removeObserver(self, name: .kickedByNewDevice, object: nil)
             
             volumeButtonManager.stopMonitoring()
         }
@@ -1216,6 +1221,17 @@ struct ContentView: View {
             }
         } message: {
             Text(trialEndMessage.isEmpty ? "试用已结束，请扫码绑定设备后继续使用" : trialEndMessage)
+        }
+        // ⭐ §71 被顶下线弹框（确认 → 清 token 回登录页）
+        .alert("已在其他设备登录", isPresented: $showKickedAlert) {
+            Button("回到登录页") {
+                showKickedAlert = false
+                UserDefaults.standard.set("", forKey: "jwt_token")
+                UserDefaults.standard.set("", forKey: "permanent_token")
+                appState.navigateToMonitorLogin()
+            }
+        } message: {
+            Text(kickedMessage.isEmpty ? "该账号已在另一台手机上登录，本机已被下线" : kickedMessage)
         }
         // ⭐ 需求#13：版本更新软提示（不拦截推流，知道了即关）
         .alert("发现新版本", isPresented: $showUpdatePrompt) {
@@ -1394,6 +1410,21 @@ struct ContentView: View {
                     self.showTrialEndAlert = true
                     print("⏱️ 试用结束，弹框引导扫码绑定")
                 }
+            }
+        }
+
+        // ⭐ §71 监听被顶下线（另一台手机用同 deviceId 登录）：停推 + 断WS + 弹框回登录页
+        NotificationCenter.default.addObserver(
+            forName: .kickedByNewDevice,
+            object: nil,
+            queue: .main
+        ) { notification in
+            let message = notification.userInfo?["message"] as? String ?? "该账号已在另一台手机上登录，本机已被下线"
+            if self.rtc.isPublishing { print("⚠️ [原因] 被另一台手机顶下线"); self.rtc.stopPublish() }
+            WebSocketManager.shared.disconnect()
+            if !self.showKickedAlert {
+                self.kickedMessage = message
+                self.showKickedAlert = true
             }
         }
     }

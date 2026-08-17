@@ -311,7 +311,9 @@ class WebSocketManager: ObservableObject {
         }
         
         // 确保是 ws/wss 地址
-        let urlString = "\(APIConfig.shared.baseStompWsURL)?token=\(token)&deviceId=\(deviceId)"
+        // ⭐ §71 安装实例ID：连接带上，后端单活校验（克隆机=非活跃安装 → 握手被拒/被硬踢）
+        let installId = DeviceIDManager.shared.getInstallID()
+        let urlString = "\(APIConfig.shared.baseStompWsURL)?token=\(token)&deviceId=\(deviceId)&installId=\(installId)"
         guard let url = URL(string: urlString) else {
             print("[WebSocket] Invalid URL: \(urlString)")
             return
@@ -611,6 +613,29 @@ extension WebSocketManager: SwiftStompDelegate {
             if msgType == "TryDisconnect" {
                 //print("📨 收到STOMP消息: TryDisconnect======>")
                 handleTryDisconnectMessage(messageDict: msgDict)
+            }
+
+            // ⭐ §71 单活互踢：另一台手机（不同 installId）用同 deviceId 登录，后端广播 KICKED。
+            //   keepInstallId=胜出方（新登录那台）；本机匹配则忽略，不匹配则停推+回登录页。
+            if msgType == "KICKED" {
+                let msgDeviceId = (msgDict?["deviceId"] as? String) ?? ""
+                if msgDeviceId == (self.deviceId ?? "") {
+                    let keep = (msgDict?["keepInstallId"] as? String) ?? ""
+                    let mine = DeviceIDManager.shared.getInstallID()
+                    if !keep.isEmpty && keep == mine {
+                        print("🥾 [单活§71] KICKED: 本机是新登录方，忽略")
+                    } else {
+                        let kickMsg = (msgDict?["message"] as? String) ?? "该账号已在另一台手机上登录，本机已被下线"
+                        print("🥾 [单活§71] 被顶下线 keep=\(keep.prefix(8)) mine=\(mine.prefix(8))")
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .kickedByNewDevice,
+                                object: nil,
+                                userInfo: ["message": kickMsg]
+                            )
+                        }
+                    }
+                }
             }
             
             // 🔥 v2.0: 处理 PC 端 set_fps 指令
@@ -1204,6 +1229,7 @@ extension Notification.Name {
     static let resetPublishRequested = Notification.Name("resetPublishRequested")  // 🔥 重置推流请求
     static let cameraSleepRequested = Notification.Name("cameraSleepRequested")  // 🔥 摄像头休眠/唤醒请求
     static let tryDisconnectRequested = Notification.Name("tryDisconnectRequested")  // 🔥 试用断开请求
+    static let kickedByNewDevice = Notification.Name("kickedByNewDevice")  // ⭐ §71 被另一台手机顶下线
     static let setFpsRequested = Notification.Name("setFpsRequested")  // 🔥 PC端自适应FPS指令
     //static let publishingStateChanged = Notification.Name("publishingStateChanged")
 }
