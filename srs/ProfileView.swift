@@ -414,6 +414,10 @@ struct ProfileView: View {
     
     // MARK: - 提取的子视图（减少编译器类型检查复杂度）
     
+    // ⭐ aihj 2026-08-18 差异化换肤：主线「我的」页是系统分组列表风格（白底、
+    //   左置头像行、通栏行+分割线、灰色退出块）。本版改成幻境2品牌风：
+    //   淡蓝渐变背景（与登录页同族）、居中大头像带白色描边、圆角卡片分组、
+    //   彩色图标徽章、白底红字胶囊退出按钮。元素与逻辑全部不变。
     private var mainContentView: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -421,7 +425,13 @@ struct ProfileView: View {
                 settingsListView
             }
         }
-        .background(Color(.systemGroupedBackground))
+        .background(
+            LinearGradient(
+                colors: [Color(hex: "DCEDFB"), Color(hex: "F2F8FE"), Color(hex: "FAFCFF")],
+                startPoint: .top, endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
         .navigationTitle("个人中心")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -434,25 +444,23 @@ struct ProfileView: View {
     }
     
     private var headerView: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // 头像（可点击，打开相册选择）
+        VStack(spacing: 10) {
+            // 头像（可点击，打开相册选择）——居中大头像 + 白色描边
             Button(action: { showingActionSheet = true }) {
                 avatarContent
+                    .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                    .shadow(color: Color(hex: "1197D6").opacity(0.25), radius: 8, x: 0, y: 4)
             }
             .disabled(viewModel.isUploadingAvatar)
             
             // 昵称
-            VStack(alignment: .leading, spacing: 6) {
-                Text(viewModel.userProfile?.nickname ?? viewModel.userProfile?.username ?? "--")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundColor(Color(hex: "1A1A1A"))
-            }
-            
-            Spacer()
+            Text(viewModel.userProfile?.nickname ?? viewModel.userProfile?.username ?? "--")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(Color(hex: "1A1A1A"))
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 25)
-        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 28)
+        .padding(.bottom, 22)
     }
     
     private var avatarContent: some View {
@@ -545,12 +553,12 @@ struct ProfileView: View {
     }
 
     private var settingsListView: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 14) {
             settingsSection1
             settingsSection2
             logoutButton
         }
-        .background(Color.white)
+        .padding(.horizontal, 16)
     }
     
     private var settingsSection1: some View {
@@ -559,10 +567,11 @@ struct ProfileView: View {
             ProfileRowView(icon: membershipRowIcon,
                            title: membershipRowTitle,
                            subtitle: membershipRowSubtitle,
-                           showArrow: true) {
+                           showArrow: true,
+                           iconTint: Color(hex: "1197D6")) {
                 handleRegistrationTimeAction()
             }
-            Divider().padding(.leading, 60)
+            Divider().padding(.leading, 64)
             
             // coco/aihj：§60 剩余天数行已移除（后端无对应接口）
             
@@ -571,20 +580,23 @@ struct ProfileView: View {
             //     ProfileRowView(icon: "calendar.badge.clock", title: "到期时间", subtitle: formatExpireDate(), showArrow: false) {
             //         // 无操作
             //     }
-            //     Divider().padding(.leading, 60)
+            //     Divider().padding(.leading, 64)
             // }
             
             // 🔥 扫一扫（扫码绑定设备）
-            ProfileRowView(icon: "qrcode.viewfinder", title: "扫一扫", subtitle: "扫描控制端二维码进行绑定", showArrow: true) {
+            ProfileRowView(icon: "qrcode.viewfinder", title: "扫一扫", subtitle: "扫描控制端二维码进行绑定", showArrow: true,
+                           iconTint: Color(hex: "34C759")) {
                 handleDeviceBindingAction()
             }
-            Divider().padding(.leading, 60)
             
             // ⭐ 2026-08-16 需求：登录改为账号一键登录（密码全程不可见，默认 123456），
             //   「修改密码」入口移除（ChangePasswordView/handleChangePasswordAction 及接口保留，仅摘入口）
             
             // ⭐ 2026-08-15 需求：去掉「注销账号」入口（handleDeleteAccountAction 及后端接口保留，仅摘入口）
         }
+        .background(Color.white)
+        .cornerRadius(14)
+        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
     
     // 🔥 是否已激活会员
@@ -634,31 +646,36 @@ struct ProfileView: View {
     
     private var settingsSection2: some View {
         VStack(spacing: 0) {
-            ProfileRowView(icon: "info.circle", title: "版本号", subtitle: appVersionText, showArrow: true) {
+            ProfileRowView(icon: "info.circle", title: "版本号", subtitle: appVersionText, showArrow: true,
+                           iconTint: Color(hex: "FF9500")) {
                 handleVersionInfoAction()
             }
-            Divider().padding(.leading, 60)
+            Divider().padding(.leading, 64)
             
-            ProfileRowView(icon: "questionmark.circle", title: "关于我们", showArrow: true) {
+            ProfileRowView(icon: "questionmark.circle", title: "关于我们", showArrow: true,
+                           iconTint: Color(hex: "AF52DE")) {
                 handleAboutUsAction()
             }
-            Divider().padding(.leading, 60)
             
             // coco/aihj：问题反馈（/message/*）、§60 PC 下载入口已移除（后端无对应接口，对齐老 iOS）
         }
+        .background(Color.white)
+        .cornerRadius(14)
+        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
     }
     
     private var logoutButton: some View {
         Button(action: handleLogoutAction) {
             Text("退出")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(Color(hex: "FAFAFA"))
-                .frame(width: 160, height: 46)
-                .background(Color(hex: "CCCCCC"))
-                .cornerRadius(10)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(Color(hex: "E5484D"))
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Capsule().fill(Color.white))
+                .overlay(Capsule().stroke(Color(hex: "E5484D").opacity(0.35), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 2)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 30)
+        .padding(.top, 16)
         .padding(.bottom, 40)
     }
     
@@ -787,40 +804,46 @@ struct ProfileView: View {
 }
 
 // MARK: - 设置行组件
+// ⭐ aihj 2026-08-18 差异化换肤：主线是「裸图标+通栏白底行」，本版改成
+//   彩色圆角徽章图标 + 卡片内行（背景由外层卡片提供）。参数与回调不变，仅新增 iconTint。
 struct ProfileRowView: View {
     let icon: String
     let title: String
     let subtitle: String?
     let showArrow: Bool
+    let iconTint: Color
     let action: () -> Void
     
-    init(icon: String, title: String, subtitle: String? = nil, showArrow: Bool = false, action: @escaping () -> Void) {
+    init(icon: String, title: String, subtitle: String? = nil, showArrow: Bool = false,
+         iconTint: Color = Color(hex: "1197D6"), action: @escaping () -> Void) {
         self.icon = icon
         self.title = title
         self.subtitle = subtitle
         self.showArrow = showArrow
+        self.iconTint = iconTint
         self.action = action
     }
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
-                // 图标
+            HStack(spacing: 14) {
+                // 图标（彩色圆角徽章）
                 Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(.primary)
-                    .frame(width: 24, height: 24)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(iconTint)
+                    .frame(width: 34, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(iconTint.opacity(0.12)))
                 
                 // 标题和副标题
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 16))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(.primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     
                     if let subtitle = subtitle {
                         Text(subtitle)
-                            .font(.system(size: 14))
+                            .font(.system(size: 12))
                             .foregroundColor(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -829,13 +852,13 @@ struct ProfileRowView: View {
                 // 箭头
                 if showArrow {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color(hex: "C3C7CF"))
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(Color.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
         }
         .buttonStyle(PlainButtonStyle())
     }

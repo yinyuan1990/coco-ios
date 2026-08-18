@@ -300,25 +300,17 @@ struct QualityRadioButton: View {
     }
     
     var body: some View {
+        // ⭐ aihj 2026-08-18 差异化换肤：主线是「圆形单选点+文字」，本版改成胶囊标签
+        //   （选中=品牌蓝填充白字，未选=浅灰底灰字），元素与逻辑不变
         Button(action: action) {
-            HStack(spacing: 4) {
-                ZStack {
-                    Circle()
-                        .stroke(isSelected ? Color(hex: "1197D6") : Color(hex: "999999"), lineWidth: 1)
-                        .frame(width: 15, height: 15)
-                    
-                    if isSelected {
-                        Circle()
-                            .fill(Color(hex: "1197D6"))
-                            .frame(width: 6, height: 6)
-                    }
-                }
-                .frame(width: 16, height: 16)
-                
-                Text(profileName)
-                    .font(.system(size: 10))
-                    .foregroundColor(Color(hex: "1A1A1A"))
-            }
+            Text(profileName)
+                .font(.system(size: 10, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? .white : Color(hex: "666666"))
+                .padding(.horizontal, 10)
+                .frame(height: 22)
+                .background(
+                    Capsule().fill(isSelected ? Color(hex: "1197D6") : Color(hex: "E4E6EE"))
+                )
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -902,8 +894,23 @@ struct ContentView: View {
                                 .padding(.horizontal, 16)
                         }
 
-                        // 档位（可点击切换UI高亮，不发后端）+ 摄像头切换
-                        HStack(spacing: 6) {
+                        // ⭐ aihj 2026-08-18：档位/切换已从底部挪到屏幕右侧竖排（见下方「右侧档位列」）
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 40)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+            
+            // 右侧档位列（档位切换 + 摄像头切换）
+            // ⭐ aihj 2026-08-18 差异化换肤：主线是底部「黑底独立方块+蓝底选中黄字」横排，
+            //   本版改成屏幕右侧竖排毛玻璃胶囊（选中=白色胶囊+品牌蓝字），元素与逻辑不变
+            if showControls {
+                HStack {
+                    Spacer()
+                    
+                    VStack(spacing: 10) {
+                        VStack(spacing: 4) {
                             // 档位按钮（仅UI切换，不发送后端）
                             // ⭐ aihj 版：恢复老幻境2四档 标清/高清/超清/4K（不显示超低网档）
                             ForEach([LadderProfile.standard, .high, .ultra, .p4k], id: \.self) { profile in
@@ -912,36 +919,34 @@ struct ContentView: View {
                                     rtc.currentProfile = profile
                                 }) {
                                     Text(profileDisplayName(profile))
-                                        .font(.system(size: 10, weight: rtc.currentProfile == profile ? .bold : .regular))
-                                        .foregroundColor(rtc.currentProfile == profile ? .yellow : .white)
-                                        .frame(width: 40, height: 30)
-                                        .background(rtc.currentProfile == profile ? Color.blue.opacity(0.8) : Color.black.opacity(0.6))
-                                        .cornerRadius(6)
+                                        .font(.system(size: 11, weight: rtc.currentProfile == profile ? .semibold : .regular))
+                                        .foregroundColor(rtc.currentProfile == profile ? Color(hex: "1197D6") : .white)
+                                        .frame(width: 46, height: 28)
+                                        .background(
+                                            Capsule().fill(rtc.currentProfile == profile ? Color.white : Color.clear)
+                                        )
                                 }
                             }
-                            
-                            // 分隔线
-                            Rectangle()
-                                .fill(Color.white.opacity(0.3))
-                                .frame(width: 1, height: 20)
-                            
-                            // 摄像头切换
-                            Button(action: {
-                                rtc.toggleCamera()
-                            }) {
-                                Text("切换")
-                                    .font(.system(size: 10, weight: .regular))
-                                    .foregroundColor(.white)
-                                    .frame(width: 40, height: 30)
-                                    .background(Color.black.opacity(0.6))
-                                    .cornerRadius(6)
-                            }
+                        }
+                        .padding(4)
+                        .background(Capsule().fill(Color.white.opacity(0.18)))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 0.5))
+                        
+                        // 摄像头切换（同款毛玻璃胶囊）
+                        Button(action: {
+                            rtc.toggleCamera()
+                        }) {
+                            Text("切换")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 54, height: 34)
+                                .background(Capsule().fill(Color.white.opacity(0.18)))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 0.5))
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 40)
+                    .padding(.trailing, 10)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
             // 黑幕层
