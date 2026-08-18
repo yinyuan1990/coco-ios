@@ -574,17 +574,17 @@ struct BrightnessSliderView: View {
 // MARK: - 主视图
 struct ContentView: View {
     @StateObject var rtc = WebRTCManager()
-    @ObservedObject var h265 = H265Support.shared   // ⭐ H265：左上角编码显示（H264/H265）
-
-    // ⭐ §53.2 左上角 PC 状态：在线（PC_PRESENCE 心跳）× 在看（拉流心跳）两两组合。
-    //   绿=在线且出画面；橙=在线但没画面（→ 查拉流/协商，不是账号或网络问题）；红=对方没上线。
+    // ⭐ §53.2 PC 状态：在线（PC_PRESENCE 心跳）× 在看（拉流心跳）两两组合。
+    // ⭐ aihj 2026-08-18：从左上角挪到右侧档位列上方（居中），文案压缩成短标签：
+    //   红=PC未上线 / 黄=重连中 / 橙=PC在线（没画面）/ 绿=PC在看（在线且出画面）。
     private var pcStatusText: String {
         if !rtc.pcOnline && !rtc.viewerConnected { return "PC未上线" }
-        // ⭐ 2026-08-01 用户拍板：主页**不显示**观看端数量（此前把"不能显示数量"理解反了加了台数，撤掉）
-        return rtc.viewerConnected ? "PC在线·在看" : "PC在线·未出画面"
+        if rtc.p2pReconnecting && !rtc.viewerConnected { return "重连中" }
+        return rtc.viewerConnected ? "PC在看" : "PC在线"
     }
     private var pcStatusColor: Color {
         if !rtc.pcOnline && !rtc.viewerConnected { return .red }
+        if rtc.p2pReconnecting && !rtc.viewerConnected { return .yellow }
         return rtc.viewerConnected ? .green : .orange
     }
     @EnvironmentObject var appState: AppState
@@ -770,62 +770,8 @@ struct ContentView: View {
                 withAnimation(.easeInOut(duration: 0.25)) { showControls.toggle() }
             }
 
-            // PC 连接 + 白平衡状态（左上角，始终显示）
-            VStack {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        // ⭐ §53.2：「在线」与「在看」拆成两段，别再用一个灯表达两件事。
-                        //   以前这行只看拉流心跳（PC 只在有画面时才发），PC 登录着但没画面
-                        //   会显示「PC未连接」——把故障现象说成了对方没上线，现场没法判断。
-                        //   现在：绿=在线且在看 / 橙=在线但没出画面（问题在拉流侧）/ 红=真没上线。
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(pcStatusColor)
-                                .frame(width: 7, height: 7)
-                            Text(pcStatusText)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(pcStatusColor)
-                        }
-                        // ⭐ 切网重连中（P2P）：过程可视化，PC 心跳恢复后自动消失
-                        if rtc.p2pReconnecting && !rtc.viewerConnected {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(Color.yellow)
-                                    .frame(width: 7, height: 7)
-                                Text("网络切换重连中…")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.yellow)
-                            }
-                        }
-                        // ⭐ 2026-08-14 aihj：白平衡行隐藏（老板要求），代码保留
-                        // HStack(spacing: 4) {
-                        //     Circle()
-                        //         .fill(rtc.whiteBalanceIsAuto ? Color.cyan : Color.orange)
-                        //         .frame(width: 7, height: 7)
-                        //     Text("白平衡:\(rtc.whiteBalanceStatusText)")
-                        //         .font(.system(size: 11, weight: .medium))
-                        //         .foregroundColor(rtc.whiteBalanceIsAuto ? .cyan : .orange)
-                        // }
-                        // ⭐ 2026-08-14 aihj：推流编码显示 H264（本版写死只推 H264，如实显示）
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(Color.orange)
-                                .frame(width: 7, height: 7)
-                            Text("推流:H264")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.orange)
-                        }
-                    }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 5)
-                    .background(Color.black.opacity(0.45))
-                    .cornerRadius(8)
-                    .padding(.top, 52)
-                    .padding(.leading, 10)
-                    Spacer()
-                }
-                Spacer()
-            }
+            // ⭐ aihj 2026-08-18：左上角状态块整体撤掉——「推流:H264」行不要了（老板拍板），
+            //   PC 在线状态挪到右侧档位列上方居中显示（见「右侧档位列」）；白平衡行代码此前已隐藏。
 
             // 顶部导航栏
             if showControls {
@@ -841,7 +787,7 @@ struct ContentView: View {
                             if !rtc.isCameraSleeping { rtc.sleepCamera() }
                             appState.navigateBack()
                         }) {
-                            Image(systemName: "xmark")
+                            Image(systemName: "chevron.left")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(Color(hex: "1A1A1A"))
                                 .frame(width: 28, height: 28)
@@ -858,14 +804,14 @@ struct ContentView: View {
                         
                         Spacer()
                         
-                        // 右边 - 只留「我的」文字入口（⭐ 2026-08-17 需求：去掉设置齿轮图标）
+                        // 右边 - 「我的」入口（⭐ aihj 2026-08-18：文字改成头像图标）
                         Button(action: {
                             showingProfile = true
                         }) {
-                            Text("我的")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color(hex: "1A1A1A"))
-                                .frame(height: 28)
+                            Image(systemName: "person.crop.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(Color(hex: "1197D6"))
+                                .frame(width: 28, height: 28)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -885,9 +831,7 @@ struct ContentView: View {
                     Spacer()
                     
                     VStack(spacing: 10) {
-                        // 🔍 屏幕亮度调节
-                        BrightnessSliderView()
-                            .padding(.horizontal, 16)
+                        // ⭐ aihj 2026-08-18 需求：底部屏幕亮度条去掉（BrightnessSliderView 组件保留未删）
 
                         if showCaptureExperimentPanel {
                             captureExperimentPanel()
@@ -910,6 +854,21 @@ struct ContentView: View {
                     Spacer()
                     
                     VStack(spacing: 10) {
+                        // ⭐ aihj 2026-08-18：PC 在线状态挪到档位列正上方（居中）——
+                        //   红=PC未上线 / 黄=重连中 / 橙=PC在线（没画面）/ 绿=PC在看
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(pcStatusColor)
+                                .frame(width: 6, height: 6)
+                            Text(pcStatusText)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(pcStatusColor)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.black.opacity(0.4)))
+                        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
+
                         VStack(spacing: 4) {
                             // 档位按钮（仅UI切换，不发送后端）
                             // ⭐ aihj 版：恢复老幻境2四档 标清/高清/超清/4K（不显示超低网档）

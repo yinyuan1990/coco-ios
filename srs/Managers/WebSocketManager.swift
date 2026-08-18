@@ -542,6 +542,13 @@ extension WebSocketManager: SwiftStompDelegate {
         //print("🔌 STOMP连接断开: \(disconnectType)")
         updateConnectionState(.disconnected)
         isConnected = false
+        // ⭐ 2026-08-18 修「PC 离线后左上角仍显示 PC 在线」：断开的瞬间就把
+        //   「PC在线/在看」清掉——断开期间收不到任何心跳，老状态不可信。
+        //   重连后 PC 心跳 1s 一条，状态 1~2s 内自动恢复，不会误伤。
+        SessionPolicy.shared.clearPresenceOnSocketLost()
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: NSNotification.Name("StompSocketLost"), object: nil)
+        }
         stopHeartbeat()
         //
         stopStatusPush()

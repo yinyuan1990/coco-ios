@@ -52,7 +52,7 @@ struct DeviceBindingQRScannerView: View {
                             dismiss()
                         }
                     }) {
-                        Image(systemName: "xmark")
+                        Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(showConfirm ? Color(hex: "1A1A1A") : .white)
                     }

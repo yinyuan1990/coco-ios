@@ -1433,6 +1433,17 @@ final class WebRTCManager: NSObject, ObservableObject {
         refreshPCPresenceState()
     }
 
+    /// ⭐ 2026-08-18：本机 STOMP 断开 → 立即熄灭「PC在线/在看」两个灯，
+    /// 不等 3s/4s 超时——断开期间根本收不到心跳，老状态就是谎报。
+    @objc private func onStompSocketLost() {
+        if viewerConnected {
+            viewerConnected = false
+            print("📺 [VIEWER] 本机 STOMP 断开 → PC在看灯立即熄灭")
+        }
+        lastViewerHeartbeatTime = .distantPast
+        refreshPCPresenceState()
+    }
+
     /// 汇总在线 PC 状态到 @Published（主线程调用）
     private func refreshPCPresenceState() {
         let count = SessionPolicy.shared.onlineViewerCount
@@ -3325,6 +3336,14 @@ final class WebRTCManager: NSObject, ObservableObject {
                 name: NSNotification.Name("PCPresence"),
                 object: nil
         )
+        // ⭐ 2026-08-18 修「PC 离线后左上角仍显示 PC 在线」：本机 STOMP 断开 → 立即清
+        //   「在线/在看」两个灯（SessionPolicy 的注册表已在 WebSocketManager 里同步清空）。
+        NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(onStompSocketLost),
+                name: NSNotification.Name("StompSocketLost"),
+                object: nil
+        )
         viewerHeartbeatChecker = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             let elapsed = Date().timeIntervalSince(self.lastViewerHeartbeatTime)
@@ -3344,6 +3363,12 @@ final class WebRTCManager: NSObject, ObservableObject {
             let before = self.viewerRegistry.count
             self.viewerRegistry = self.viewerRegistry.filter { now.timeIntervalSince($0.value.lastSeen) <= 4.0 }
             if self.viewerRegistry.count != before { self.evaluateConnectMode(reason: "viewer-change") }
+        }
+        // ⭐ 2026-08-18 修「PC 离线后左上角仍显示 PC 在线」加固：把超时检查定时器挂到
+        //   .common 模式——默认模式下滑动/长按手势会让 RunLoop 进 tracking 模式、定时器
+        //   停摆，4s 下线判定跟着失灵；.common 模式手势期间也照常跑。
+        if let checker = viewerHeartbeatChecker {
+            RunLoop.main.add(checker, forMode: .common)
         }
 
         // 测试模式监听（PC端 LUT 开关）

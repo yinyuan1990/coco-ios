@@ -107,7 +107,7 @@ struct ChangePasswordView: View {
                     Button(action: {
                         dismiss()
                     }) {
-                        Image(systemName: "xmark")
+                        Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(Color(hex: "1A1A1A"))
                     }

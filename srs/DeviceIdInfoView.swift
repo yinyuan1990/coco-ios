@@ -30,7 +30,7 @@ struct DeviceIdInfoView: View {
                 // 顶部关闭按钮（与登录页同款）
                 HStack {
                     Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
+                        Image(systemName: "chevron.left")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundColor(.gray)
                             .frame(width: 32, height: 32)

@@ -282,7 +282,7 @@ struct RegisterView: View {
                             Button(action: {
                                 dismiss()
                             }) {
-                                Image(systemName: "xmark")
+                                Image(systemName: "chevron.left")
                                     .font(.system(size: 18, weight: .medium))
                                     .foregroundColor(.gray)
                                     .frame(width: 32, height: 32)

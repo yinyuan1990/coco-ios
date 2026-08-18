@@ -76,7 +76,7 @@ struct ActivationView: View {
                             dismiss()
                         }
                     }) {
-                        Image(systemName: "xmark")
+                        Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(showScanner ? .white : Color(hex: "1A1A1A"))
                     }
@@ -594,7 +594,7 @@ struct ActivationScannerContentView: View {
                         Button(action: {
                             onCancel()
                         }) {
-                            Image(systemName: "xmark")
+                            Image(systemName: "chevron.left")
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(.white)
                                 .frame(width: 44, height: 44)

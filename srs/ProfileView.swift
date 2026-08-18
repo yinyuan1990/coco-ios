@@ -681,7 +681,7 @@ struct ProfileView: View {
     
     private var backButton: some View {
         Button(action: { handleBackAction() }) {
-            Image(systemName: "xmark")
+            Image(systemName: "chevron.left")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(Color(hex: "1A1A1A"))
         }

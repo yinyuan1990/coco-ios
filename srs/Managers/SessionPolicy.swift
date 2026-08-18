@@ -160,6 +160,18 @@ final class SessionPolicy {
         return changed
     }
 
+    /// ⭐ 2026-08-18 修「PC 离线后 iOS 左上角仍显示在线」：本机 STOMP 断开的瞬间，
+    /// 观看端注册表立即清空——断开期间收不到任何 PC_PRESENCE，老数据不可信，
+    /// 留着只会让左上角灯说谎；重连后 PC 心跳 1s 一条，1~2s 内自动恢复。
+    /// 只清 viewers，不动重协商/钉住等会话状态（那些归 reset() 管）。
+    func clearPresenceOnSocketLost() {
+        lock.lock()
+        let had = !viewers.isEmpty
+        viewers.removeAll()
+        lock.unlock()
+        if had { log("🔌 本机 STOMP 断开 → 清空观看端在线注册表（重连后由 PC 心跳自动恢复）") }
+    }
+
     /// 退登录 / 切设备：清空，避免上一台设备的观看端状态串到下一次
     func reset() {
         lock.lock()

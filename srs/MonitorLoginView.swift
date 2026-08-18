@@ -96,7 +96,7 @@ struct MonitorLoginView: View {
                         Button(action: {
                             appState.navigateBack()
                         }) {
-                            Image(systemName: "xmark")
+                            Image(systemName: "chevron.left")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(.gray)
                                 .frame(width: 32, height: 32)
@@ -476,7 +476,7 @@ struct MonitorLoginView: View {
     private func getLoginButtonText() -> String {
         switch loginStep {
         case .idle:
-            return "一键登录"
+            return "登录"
         case .authenticating:
             return "验证中..."
         case .connecting:
@@ -484,7 +484,7 @@ struct MonitorLoginView: View {
         case .success:
             return "登录成功"
         case .failed:
-            return "一键登录"
+            return "登录"
         }
     }
     
