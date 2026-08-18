@@ -721,6 +721,19 @@ struct MonitorLoginView: View {
                         
                     case .serverErrorWithMessage(let msg):
                         errorMessage = msg
+                        // ⭐ 2026-08-18 修「本地存了旧账号 → 一直报账号不存在」：
+                        //   本地 Keychain 里的账号在服务器已不存在（测试账号被清/换库），
+                        //   而登录页优先用本地账号，永远轮不到按设备ID找回的正确账号。
+                        //   清掉本地缓存 → 立即按设备ID重新找回，用户再点一次登录即可。
+                        if msg.contains("账号不存在") {
+                            _ = AccountStorageManager.shared.clearAccountInfo()
+                            hasLocalAccount = false
+                            accountRecovered = false
+                            fullUsername = ""
+                            username = ""
+                            password = ""
+                            fetchAccountByDevice()
+                        }
                     default:
                         errorMessage = error.localizedDescription
                     }
