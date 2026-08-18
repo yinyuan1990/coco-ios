@@ -63,7 +63,7 @@ struct MonitorLoginView: View {
     @State private var showUserAgreement = false
     @State private var showPrivacyPolicy = false
     @State private var showAlreadyBoundAlert = false  // 已绑定账号提示
-    @State private var showDeviceIdPage = false       // 🔥 设备ID查看页面
+    @State private var deviceIdCopied = false          // ⭐ 2026-08-18 设备ID一键复制的反馈态
     // ⭐ 强制更新（总后台「App更新配置」下发最低版本+下载地址，本地版本低则弹不可绕过弹窗）
     @State private var showForceUpdate = false
     @State private var forceUpdateMessage = ""
@@ -192,7 +192,37 @@ struct MonitorLoginView: View {
                         }
                         .disabled(isLoading)
                         .padding(.top, 10)
-                        
+
+                        // ⭐ 2026-08-18 需求：设备ID直接放登录按钮下方 + 一键复制
+                        //   （替代原「点版本号弹 DeviceIdInfoView 页」的隐藏入口，不再跳转）
+                        HStack(spacing: 8) {
+                            Text("设备ID")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                            Text(DeviceIDManager.shared.getDeviceID())
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button(action: {
+                                UIPasteboard.general.string = DeviceIDManager.shared.getDeviceID()
+                                withAnimation { deviceIdCopied = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    withAnimation { deviceIdCopied = false }
+                                }
+                            }) {
+                                HStack(spacing: 3) {
+                                    Image(systemName: deviceIdCopied ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 11))
+                                    Text(deviceIdCopied ? "已复制" : "复制")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .foregroundColor(deviceIdCopied ? .green : .blue)
+                            }
+                        }
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity)
+
                         // 注册链接（老样式：没有账号时显示）
                         if !hasLocalAccount {
                             HStack {
@@ -244,15 +274,13 @@ struct MonitorLoginView: View {
                     }
                     .padding(.bottom, 8)
                     
-                    // 版本号（兼作设备ID隐藏入口，保留新版功能，视觉不打扰）
-                    Button(action: { showDeviceIdPage = true }) {
-                        Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
-                            .font(.system(size: 10))
-                            .foregroundColor(.gray.opacity(0.5))
-                            .padding(.bottom, 12)
-                            .frame(maxWidth: .infinity)
-                            .contentShape(Rectangle())
-                    }
+                    // 版本号（⭐ 2026-08-18：纯展示——设备ID已明放在登录按钮下方+一键复制，
+                    //   原「点版本号弹 DeviceIdInfoView」隐藏入口去掉，不再跳转）
+                    Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray.opacity(0.5))
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity)
                 }
             }
             .onTapGesture {
@@ -260,9 +288,6 @@ struct MonitorLoginView: View {
             }
         }
         .navigationBarHidden(true)
-        .fullScreenCover(isPresented: $showDeviceIdPage) {
-            DeviceIdInfoView()
-        }
         .onAppear {
             loadLocalAccountInfo()
             // ⭐ 2026-08-17：本地没账号（重装/换机/老用户清数据）→ 按设备ID到服务器找回
