@@ -87,6 +87,10 @@ struct MonitorLoginView: View {
     var body: some View {
         NavigationView {
             ZStack {
+                // 底层垫星空同色，避免缩放动画瞬间露出 NavigationView 默认白底
+                Color(red: 0.07, green: 0.04, blue: 0.18)
+                    .ignoresSafeArea()
+                
                 // ⭐ 2026-08-22 需求：背景换星空光环。原 cocologin.gif（39.4MB）正中烧了
                 //   「我的水印」白字无法修复，改用 AI 重绘的同风格无水印静态图（150KB）
                 //   + 代码动画（缓慢呼吸缩放 + 星光闪烁），视觉近似动图且更省电。
@@ -269,6 +273,7 @@ struct MonitorLoginView: View {
             }
         }
         .navigationBarHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             loadLocalAccountInfo()
             // ⭐ 2026-08-17：本地没账号（重装/换机/老用户清数据）→ 按设备ID到服务器找回
@@ -872,18 +877,24 @@ struct LoginAnimatedBackground: View {
     
     var body: some View {
         GeometryReader { geo in
+            // 底图始终比屏幕大一圈（1.18x），缩放在 1.0~1.08 之间——最小时也盖住刘海/状态栏，
+            // 不会在缩回 1.0 时露出白边（scaleEffect 从中心缩放，刚好铺满的图一缩小顶部就会漏底）。
+            let w = geo.size.width
+            let h = geo.size.height
             ZStack {
                 Image("login_bg_static")
                     .resizable()
                     .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .scaleEffect(zoomIn ? 1.10 : 1.0)
+                    .frame(width: w * 1.18, height: h * 1.18)
+                    .scaleEffect(zoomIn ? 1.08 : 1.0)
                     .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: zoomIn)
-                    .clipped()
+                    .position(x: w / 2, y: h / 2)
                 
                 TwinkleStarsOverlay()
             }
         }
+        .clipped()
+        .ignoresSafeArea()
         .allowsHitTesting(false)
         .onAppear { zoomIn = true }
     }
