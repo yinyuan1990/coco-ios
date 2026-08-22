@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 // ⭐ §53.4-定稿（2026-07-28）：**登录页不再让用户选线路，也不再选编码**。
 //   线路由系统在推流前按网络关系自动决定（同 WiFi → P2P 单人直连；否则 → SRS 多人线路），
@@ -90,10 +91,10 @@ struct MonitorLoginView: View {
                 Color(red: 0.07, green: 0.04, blue: 0.18)
                     .ignoresSafeArea()
                 
-                // ⭐ 2026-08-22 需求：背景换星空光环。原 cocologin.gif（39.4MB）正中烧了
-                //   「我的水印」白字无法修复，改用 AI 重绘的同风格无水印静态图（150KB）
-                //   + 代码动画（缓慢呼吸缩放 + 星光闪烁），视觉近似动图且更省电。
-                LoginAnimatedBackground()
+                // ⭐ 2026-08-22 需求：背景换星空光环动图。拿到无水印新素材后回归视频方案：
+                //   cocologin.gif（41.6MB）压成 login_bg.mp4（720p/24fps/H264，0.33MB），
+                //   AVPlayerLooper 无缝循环。视频本身不做缩放动画，不会再挤出白边。
+                LoginVideoBackground()
                     .ignoresSafeArea()
                 
                 // 底部加一层轻微压暗，保证协议/版本等小字在亮色画面上也可读
@@ -185,14 +186,27 @@ struct MonitorLoginView: View {
                         .background(
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
-                                    (isLoading ? Color.gray : Color.blue)
+                                    // ⭐ 2026-08-22 悬浮效果：渐变底色（上浅下深有立体感）
+                                    if isLoading {
+                                        Color.gray
+                                    } else {
+                                        LinearGradient(
+                                            colors: [Color(hex: "4DA8FF"), Color(hex: "1B6DF0")],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    }
                                     // 按压进度条（白色高亮从左往右推进到 8s 满格）
                                     Color.white.opacity(0.30)
                                         .frame(width: geo.size.width * CGFloat(holdProgress))
                                 }
                             }
                         )
-                        .cornerRadius(12)
+                        .cornerRadius(14)
+                        // ⭐ 悬浮效果：蓝色光晕 + 下方投影，按下时收拢（像按进去）
+                        .shadow(color: Color(hex: "1B6DF0").opacity(holdStartTime != nil ? 0.25 : 0.55),
+                                radius: holdStartTime != nil ? 6 : 16, y: holdStartTime != nil ? 3 : 8)
+                        .shadow(color: Color.black.opacity(0.25), radius: 4, y: 2)
                         .contentShape(Rectangle())
                         .scaleEffect(holdStartTime != nil ? 0.97 : 1.0)
                         .animation(.easeOut(duration: 0.15), value: holdStartTime != nil)
@@ -866,73 +880,67 @@ struct RoundedCorner: Shape {
     }
 }
 
-// MARK: - ⭐ 2026-08-22 登录页动态背景（AI 重绘无水印星空光环图 + 代码动画）
-//   原 cocologin.gif 39.4MB 且正中烧死「我的水印」白字（delogo 修补出白色拖影带，不可用），
-//   改为：静态图 login_bg_static（150KB JPEG）缓慢呼吸缩放（Ken Burns）+ Canvas 星光闪烁层。
-struct LoginAnimatedBackground: View {
-    var body: some View {
-        // 缩放用 TimelineView 按正弦波驱动，不用 SwiftUI 隐式 animation——
-        // `.animation(repeatForever)` 会泄漏到父视图，把 NavigationView/安全区一起做动画，顶部闪白边。
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
-            GeometryReader { geo in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let pulse = 0.5 + 0.5 * sin(t * (2 * .pi / 18.0))  // 18s 一个来回
-                let scale = 1.0 + 0.08 * pulse
-                let w = geo.size.width
-                let h = geo.size.height
-                ZStack {
-                    Image("login_bg_static")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: w * 1.22, height: h * 1.22)
-                        .scaleEffect(scale)
-                        .position(x: w / 2, y: h / 2)
-                    
-                    TwinkleStarsOverlay(date: timeline.date)
-                }
-            }
-        }
-        .clipped()
-        .ignoresSafeArea()
-        .allowsHitTesting(false)
+// MARK: - ⭐ 2026-08-22 登录页动态背景（无水印 cocologin.gif → login_bg.mp4 无缝循环）
+//   静音、resizeAspectFill 填满裁切、不响应触摸；回前台自动续播（AVPlayerLooper 处理循环衔接）。
+//   播放层底色为星空同色，视频首帧渲染前也不会露白。
+struct LoginVideoBackground: UIViewRepresentable {
+    func makeUIView(context: Context) -> LoginVideoPlayerUIView {
+        LoginVideoPlayerUIView()
     }
+    
+    func updateUIView(_ uiView: LoginVideoPlayerUIView, context: Context) {}
 }
 
-/// 星光闪烁层：固定种子随机布 26 颗小星，按各自相位/速度用正弦波调透明度（20fps 足够，省电）
-private struct TwinkleStarsOverlay: View {
-    let date: Date
-    private struct Star {
-        let x: CGFloat      // 0~1 相对坐标
-        let y: CGFloat
-        let radius: CGFloat
-        let phase: Double
-        let speed: Double
+final class LoginVideoPlayerUIView: UIView {
+    private var queuePlayer: AVQueuePlayer?
+    private var playerLooper: AVPlayerLooper?
+    private var playerLayer: AVPlayerLayer?
+    
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor(red: 0.07, green: 0.04, blue: 0.18, alpha: 1)  // 视频渲染前的星空底色
+        isUserInteractionEnabled = false
+        setupPlayer()
     }
     
-    private static let stars: [Star] = {
-        var seed: UInt64 = 20260822
-        func next() -> CGFloat {
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
-            return CGFloat(seed >> 33) / CGFloat(1 << 31)
-        }
-        return (0..<26).map { _ in
-            Star(x: next(), y: next(),
-                 radius: 1.2 + next() * 2.2,
-                 phase: Double(next()) * 2 * .pi,
-                 speed: 0.6 + Double(next()) * 1.6)
-        }
-    }()
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     
-    var body: some View {
-        Canvas { context, size in
-            let t = date.timeIntervalSinceReferenceDate
-            for star in Self.stars {
-                let alpha = 0.15 + 0.65 * (0.5 + 0.5 * sin(t * star.speed + star.phase))
-                let rect = CGRect(x: star.x * size.width, y: star.y * size.height,
-                                  width: star.radius * 2, height: star.radius * 2)
-                context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
-            }
+    private func setupPlayer() {
+        guard let url = Bundle.main.url(forResource: "login_bg", withExtension: "mp4") else {
+            print("⚠️ 登录页背景视频 login_bg.mp4 未找到")
+            return
         }
+        let item = AVPlayerItem(url: url)
+        let player = AVQueuePlayer()
+        player.isMuted = true
+        // 背景装饰视频不该阻止锁屏
+        player.preventsDisplaySleepDuringVideoPlayback = false
+        playerLooper = AVPlayerLooper(player: player, templateItem: item)
+        
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspectFill
+        self.layer.addSublayer(layer)
+        
+        queuePlayer = player
+        playerLayer = layer
+        player.play()
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+    
+    @objc private func appDidBecomeActive() {
+        queuePlayer?.play()
+    }
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer?.frame = bounds
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        queuePlayer?.pause()
     }
 }
 
