@@ -121,21 +121,49 @@ struct MonitorLoginView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
                     
-                    Spacer()
-                    
-                    // ⭐ 2026-08-22 需求：登录 logo 去掉，只留应用名（白字+投影，衬星空动图背景）
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "幻境星空")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
-                    
-                    // ⭐ 2026-08-22 需求：登录按钮沉到底部——固定在「登录/注册即表示您同意」上方 100
+                    // ⭐ 2026-08-22 需求：logo、「幻境星空」标题都不要——中部完整留给星空光环背景；
+                    //   登录按钮沉到底部（协议文字上方 100）
                     Spacer()
                     
                     // 登录表单
-                    VStack(spacing: 20) {
-                        // ⭐ 2026-08-22 需求：账号展示行去掉（账号获取逻辑不变，只是不再显示）；
-                        //   登录不输密码（本地保存值，无则默认 123456）
+                    VStack(spacing: 16) {
+                        // ⭐ 2026-08-22 需求：账号要显示——放登录按钮正上方，半透明胶囊衬深色星空背景
+                        //   （登录不输密码：本地保存值，无则默认 123456）
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundColor(hasLocalAccount ? Color(hex: "8ED6FF") : .white.opacity(0.6))
+                            
+                            if isFetchingAccount {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .tint(.white)
+                                Text("正在获取本机账号...")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.white.opacity(0.8))
+                            } else if hasLocalAccount {
+                                Text("账号 \(username)")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                if accountRecovered {
+                                    Text("已按设备找回")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 2)
+                                        .background(Color.green.opacity(0.85))
+                                        .cornerRadius(7)
+                                }
+                            } else {
+                                Text("本机还未注册账号")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.14))
+                        .clipShape(Capsule())
                         
                         // 登录按钮：轻点=登录；⭐ 按住 8 秒=自动复制设备ID（隐藏售后入口）。
                         //   手动计时实现：按住 1.5s 后按钮变提示文案+进度条，满 8s 震动+复制+弹窗。
