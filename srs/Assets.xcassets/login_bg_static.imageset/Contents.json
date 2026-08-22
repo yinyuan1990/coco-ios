@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "login_bg_static.jpg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

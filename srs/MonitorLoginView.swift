@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 
 // ⭐ §53.4-定稿（2026-07-28）：**登录页不再让用户选线路，也不再选编码**。
 //   线路由系统在推流前按网络关系自动决定（同 WiFi → P2P 单人直连；否则 → SRS 多人线路），
@@ -82,9 +81,10 @@ struct MonitorLoginView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // ⭐ 2026-08-22 需求：背景换成星空光环动图（cocologin.gif → 压缩为 login_bg.mp4，
-                //   39.4MB → 0.33MB，AVPlayer 无缝循环播放，比 GIF 解码省电得多）
-                LoginVideoBackground()
+                // ⭐ 2026-08-22 需求：背景换星空光环。原 cocologin.gif（39.4MB）正中烧了
+                //   「我的水印」白字无法修复，改用 AI 重绘的同风格无水印静态图（150KB）
+                //   + 代码动画（缓慢呼吸缩放 + 星光闪烁），视觉近似动图且更省电。
+                LoginAnimatedBackground()
                     .ignoresSafeArea()
                 
                 // 底部加一层轻微压暗，保证协议/版本等小字在亮色画面上也可读
@@ -122,7 +122,9 @@ struct MonitorLoginView: View {
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.white)
                         .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
-                        .padding(.bottom, 36)
+                    
+                    // ⭐ 2026-08-22 需求：登录按钮沉到底部——固定在「登录/注册即表示您同意」上方 100
+                    Spacer()
                     
                     // 登录表单
                     VStack(spacing: 20) {
@@ -175,8 +177,7 @@ struct MonitorLoginView: View {
                         }
                     }
                     .padding(.horizontal, 30)
-                    
-                    Spacer()
+                    .padding(.bottom, 100)
                     
                     // 底部协议条款（老样式）
                     VStack(spacing: 4) {
@@ -756,66 +757,67 @@ struct RoundedCorner: Shape {
     }
 }
 
-// MARK: - ⭐ 2026-08-22 登录页动态背景（cocologin.gif 压缩成 login_bg.mp4，AVPlayer 无缝循环）
-//   静音、填满裁切、不响应触摸；进后台自动暂停、回前台续播（AVPlayerLooper 处理循环衔接）
-struct LoginVideoBackground: UIViewRepresentable {
-    func makeUIView(context: Context) -> LoginVideoPlayerUIView {
-        LoginVideoPlayerUIView()
-    }
+// MARK: - ⭐ 2026-08-22 登录页动态背景（AI 重绘无水印星空光环图 + 代码动画）
+//   原 cocologin.gif 39.4MB 且正中烧死「我的水印」白字（delogo 修补出白色拖影带，不可用），
+//   改为：静态图 login_bg_static（150KB JPEG）缓慢呼吸缩放（Ken Burns）+ Canvas 星光闪烁层。
+struct LoginAnimatedBackground: View {
+    @State private var zoomIn = false
     
-    func updateUIView(_ uiView: LoginVideoPlayerUIView, context: Context) {}
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Image("login_bg_static")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .scaleEffect(zoomIn ? 1.10 : 1.0)
+                    .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: zoomIn)
+                    .clipped()
+                
+                TwinkleStarsOverlay()
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear { zoomIn = true }
+    }
 }
 
-final class LoginVideoPlayerUIView: UIView {
-    private var queuePlayer: AVQueuePlayer?
-    private var playerLooper: AVPlayerLooper?
-    private var playerLayer: AVPlayerLayer?
-    
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = UIColor(red: 0.08, green: 0.05, blue: 0.25, alpha: 1)  // 视频加载前的星空底色
-        isUserInteractionEnabled = false
-        setupPlayer()
+/// 星光闪烁层：固定种子随机布 26 颗小星，按各自相位/速度用正弦波调透明度（20fps 足够，省电）
+private struct TwinkleStarsOverlay: View {
+    private struct Star {
+        let x: CGFloat      // 0~1 相对坐标
+        let y: CGFloat
+        let radius: CGFloat
+        let phase: Double
+        let speed: Double
     }
     
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    
-    private func setupPlayer() {
-        guard let url = Bundle.main.url(forResource: "login_bg", withExtension: "mp4") else {
-            print("⚠️ 登录页背景视频 login_bg.mp4 未找到")
-            return
+    private static let stars: [Star] = {
+        var seed: UInt64 = 20260822
+        func next() -> CGFloat {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat(seed >> 33) / CGFloat(1 << 31)
         }
-        let item = AVPlayerItem(url: url)
-        let player = AVQueuePlayer()
-        player.isMuted = true
-        // 不打断其他 App 的音乐播放
-        player.preventsDisplaySleepDuringVideoPlayback = false
-        playerLooper = AVPlayerLooper(player: player, templateItem: item)
-        
-        let layer = AVPlayerLayer(player: player)
-        layer.videoGravity = .resizeAspectFill
-        self.layer.addSublayer(layer)
-        
-        queuePlayer = player
-        playerLayer = layer
-        player.play()
-        
-        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
-                                               name: UIApplication.didBecomeActiveNotification, object: nil)
-    }
+        return (0..<26).map { _ in
+            Star(x: next(), y: next(),
+                 radius: 1.2 + next() * 2.2,
+                 phase: Double(next()) * 2 * .pi,
+                 speed: 0.6 + Double(next()) * 1.6)
+        }
+    }()
     
-    @objc private func appDidBecomeActive() {
-        queuePlayer?.play()
-    }
-    
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        playerLayer?.frame = bounds
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-        queuePlayer?.pause()
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+            Canvas { context, size in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                for star in Self.stars {
+                    let alpha = 0.15 + 0.65 * (0.5 + 0.5 * sin(t * star.speed + star.phase))
+                    let rect = CGRect(x: star.x * size.width, y: star.y * size.height,
+                                      width: star.radius * 2, height: star.radius * 2)
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
+                }
+            }
+        }
     }
 }
 
