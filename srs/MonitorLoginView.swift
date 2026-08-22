@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 // ⭐ §53.4-定稿（2026-07-28）：**登录页不再让用户选线路，也不再选编码**。
 //   线路由系统在推流前按网络关系自动决定（同 WiFi → P2P 单人直连；否则 → SRS 多人线路），
@@ -63,7 +64,6 @@ struct MonitorLoginView: View {
     @State private var showUserAgreement = false
     @State private var showPrivacyPolicy = false
     @State private var showAlreadyBoundAlert = false  // 已绑定账号提示
-    @State private var deviceIdCopied = false          // ⭐ 2026-08-18 设备ID一键复制的反馈态
     // ⭐ 强制更新（总后台「App更新配置」下发最低版本+下载地址，本地版本低则弹不可绕过弹窗）
     @State private var showForceUpdate = false
     @State private var forceUpdateMessage = ""
@@ -82,13 +82,19 @@ struct MonitorLoginView: View {
     var body: some View {
         NavigationView {
             ZStack {
-                // coco/aihj：恢复老幻境2登录页视觉（淡蓝渐变→白），逻辑全部沿用新版
+                // ⭐ 2026-08-22 需求：背景换成星空光环动图（cocologin.gif → 压缩为 login_bg.mp4，
+                //   39.4MB → 0.33MB，AVPlayer 无缝循环播放，比 GIF 解码省电得多）
+                LoginVideoBackground()
+                    .ignoresSafeArea()
+                
+                // 底部加一层轻微压暗，保证协议/版本等小字在亮色画面上也可读
                 LinearGradient(
-                    gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.white]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.35)]),
+                    startPoint: .center,
+                    endPoint: .bottom
                 )
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
                 
                 VStack(spacing: 0) {
                     // 顶部关闭按钮（老样式）
@@ -98,9 +104,9 @@ struct MonitorLoginView: View {
                         }) {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.white)
                                 .frame(width: 32, height: 32)
-                                .background(Color.black.opacity(0.1))
+                                .background(Color.white.opacity(0.18))
                                 .clipShape(Circle())
                         }
                         
@@ -111,130 +117,58 @@ struct MonitorLoginView: View {
                     
                     Spacer()
                     
-                    // ⭐ 2026-08-17 需求：登录页加 logo（用 App 图标），下方是应用名
-                    VStack(spacing: 14) {
-                        Image("app_logo")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 96, height: 96)
-                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                            .shadow(color: Color.black.opacity(0.15), radius: 10, y: 4)
-                        
-                        Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "幻境2")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.primary)
-                    }
-                    .padding(.bottom, 36)
+                    // ⭐ 2026-08-22 需求：登录 logo 去掉，只留应用名（白字+投影，衬星空动图背景）
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "幻境星空")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundColor(.white)
+                        .shadow(color: Color.black.opacity(0.5), radius: 6, y: 2)
+                        .padding(.bottom, 36)
                     
                     // 登录表单
                     VStack(spacing: 20) {
-                        // ⭐ 2026-08-17 需求：账号输入框移除——账号只是形式，真正身份是设备ID。
-                        //   来源优先级：①本地保存（注册/上次登录） ②按设备ID到服务器找回（老用户/重装）
-                        //   ③都没有 → 引导一键注册。这里只做只读展示。
-                        HStack(spacing: 10) {
-                            Image(systemName: "person.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(hasLocalAccount ? .blue : .gray)
-                            
-                            if isFetchingAccount {
+                        // ⭐ 2026-08-22 需求：账号展示行去掉（账号获取逻辑不变，只是不再显示）；
+                        //   登录不输密码（本地保存值，无则默认 123456）
+                        
+                        // 登录按钮：轻点=登录；⭐ 按住 8 秒=自动复制设备ID（替代明放的复制按钮，作隐藏售后入口）
+                        HStack {
+                            if isLoading {
                                 ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .scaleEffect(0.8)
-                                Text("正在获取本机账号...")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.gray)
-                            } else if hasLocalAccount {
-                                Text("账号 \(username)")
-                                    .font(.system(size: 17, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                if accountRecovered {
-                                    Text("已按设备找回")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(Color.green)
-                                        .cornerRadius(8)
-                                }
-                            } else {
-                                Text("本机还未注册账号")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.gray)
                             }
-                            
-                            Spacer()
+                            Text(getLoginButtonText())
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 16)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(12)
-                        
-                        // ⭐ 2026-08-16 需求：登录不再输密码——密码输入框移除，
-                        //   账号直接一键登录（密码自动用本地保存值，无保存值用默认 123456）
-                        
-                        // 登录按钮（老样式：蓝色圆角）
-                        Button(action: {
-                            handleLogin()
-                        }) {
-                            HStack {
-                                if isLoading {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                        .scaleEffect(0.8)
-                                }
-                                Text(getLoginButtonText())
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(isLoading ? Color.gray : Color.blue)
-                            .cornerRadius(12)
-                        }
-                        .disabled(isLoading)
-                        .padding(.top, 10)
-
-                        // ⭐ 2026-08-18 需求：设备ID直接放登录按钮下方 + 一键复制
-                        //   （替代原「点版本号弹 DeviceIdInfoView 页」的隐藏入口，不再跳转）
-                        HStack(spacing: 8) {
-                            Text("设备ID")
-                                .font(.system(size: 12))
-                                .foregroundColor(.gray)
-                            Text(DeviceIDManager.shared.getDeviceID())
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Button(action: {
-                                UIPasteboard.general.string = DeviceIDManager.shared.getDeviceID()
-                                withAnimation { deviceIdCopied = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    withAnimation { deviceIdCopied = false }
-                                }
-                            }) {
-                                HStack(spacing: 3) {
-                                    Image(systemName: deviceIdCopied ? "checkmark" : "doc.on.doc")
-                                        .font(.system(size: 11))
-                                    Text(deviceIdCopied ? "已复制" : "复制")
-                                        .font(.system(size: 12, weight: .medium))
-                                }
-                                .foregroundColor(deviceIdCopied ? .green : .blue)
-                            }
-                        }
-                        .padding(.top, 12)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(isLoading ? Color.gray : Color.blue)
+                        .cornerRadius(12)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard !isLoading else { return }
+                            handleLogin()
+                        }
+                        .onLongPressGesture(minimumDuration: 8) {
+                            let deviceId = DeviceIDManager.shared.getDeviceID()
+                            UIPasteboard.general.string = deviceId
+                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            showAlert(message: "设备ID已复制：\n\(deviceId)")
+                        }
+                        .padding(.top, 10)
 
                         // 注册链接（老样式：没有账号时显示）
                         if !hasLocalAccount {
                             HStack {
                                 Text("没有账号？")
                                     .font(.system(size: 14))
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(.white.opacity(0.75))
                                 Button(action: {
                                     showRegisterView = true
                                 }) {
                                     Text("一键注册")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundColor(.blue)
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundColor(Color(hex: "8ED6FF"))
                                 }
                             }
                             .padding(.top, 10)
@@ -248,7 +182,7 @@ struct MonitorLoginView: View {
                     VStack(spacing: 4) {
                         Text("登录/注册即表示您同意")
                             .font(.system(size: 12))
-                            .foregroundColor(.gray)
+                            .foregroundColor(.white.opacity(0.65))
                         
                         HStack(spacing: 4) {
                             Button(action: {
@@ -256,19 +190,19 @@ struct MonitorLoginView: View {
                             }) {
                                 Text("《用户协议》")
                                     .font(.system(size: 12))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(Color(hex: "8ED6FF"))
                             }
                             
                             Text("和")
                                 .font(.system(size: 12))
-                                .foregroundColor(.gray)
+                                .foregroundColor(.white.opacity(0.65))
                             
                             Button(action: {
                                 showPrivacyPolicy = true
                             }) {
                                 Text("《隐私政策》")
                                     .font(.system(size: 12))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(Color(hex: "8ED6FF"))
                             }
                         }
                     }
@@ -278,7 +212,7 @@ struct MonitorLoginView: View {
                     //   原「点版本号弹 DeviceIdInfoView」隐藏入口去掉，不再跳转）
                     Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
                         .font(.system(size: 10))
-                        .foregroundColor(.gray.opacity(0.5))
+                        .foregroundColor(.white.opacity(0.45))
                         .padding(.bottom, 12)
                         .frame(maxWidth: .infinity)
                 }
@@ -819,6 +753,69 @@ struct RoundedCorner: Shape {
     func path(in rect: CGRect) -> Path {
         let path = UIBezierPath(roundedRect: rect, byRoundingCorners: corners, cornerRadii: CGSize(width: radius, height: radius))
         return Path(path.cgPath)
+    }
+}
+
+// MARK: - ⭐ 2026-08-22 登录页动态背景（cocologin.gif 压缩成 login_bg.mp4，AVPlayer 无缝循环）
+//   静音、填满裁切、不响应触摸；进后台自动暂停、回前台续播（AVPlayerLooper 处理循环衔接）
+struct LoginVideoBackground: UIViewRepresentable {
+    func makeUIView(context: Context) -> LoginVideoPlayerUIView {
+        LoginVideoPlayerUIView()
+    }
+    
+    func updateUIView(_ uiView: LoginVideoPlayerUIView, context: Context) {}
+}
+
+final class LoginVideoPlayerUIView: UIView {
+    private var queuePlayer: AVQueuePlayer?
+    private var playerLooper: AVPlayerLooper?
+    private var playerLayer: AVPlayerLayer?
+    
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor(red: 0.08, green: 0.05, blue: 0.25, alpha: 1)  // 视频加载前的星空底色
+        isUserInteractionEnabled = false
+        setupPlayer()
+    }
+    
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    
+    private func setupPlayer() {
+        guard let url = Bundle.main.url(forResource: "login_bg", withExtension: "mp4") else {
+            print("⚠️ 登录页背景视频 login_bg.mp4 未找到")
+            return
+        }
+        let item = AVPlayerItem(url: url)
+        let player = AVQueuePlayer()
+        player.isMuted = true
+        // 不打断其他 App 的音乐播放
+        player.preventsDisplaySleepDuringVideoPlayback = false
+        playerLooper = AVPlayerLooper(player: player, templateItem: item)
+        
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspectFill
+        self.layer.addSublayer(layer)
+        
+        queuePlayer = player
+        playerLayer = layer
+        player.play()
+        
+        NotificationCenter.default.addObserver(self, selector: #selector(appDidBecomeActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
+    }
+    
+    @objc private func appDidBecomeActive() {
+        queuePlayer?.play()
+    }
+    
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer?.frame = bounds
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        queuePlayer?.pause()
     }
 }
 

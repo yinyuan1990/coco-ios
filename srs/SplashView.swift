@@ -79,7 +79,7 @@ struct SplashView: View {
                 .opacity(logoOpacity)
 
                 // App 名称
-                Text("幻境2")
+                Text("幻境星空")
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(
@@ -94,7 +94,7 @@ struct SplashView: View {
                 Spacer()
 
                 // 底部版权
-                Text("© 2026 幻境2")
+                Text("© 2026 幻境星空")
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.3))
                     .padding(.bottom, 30)

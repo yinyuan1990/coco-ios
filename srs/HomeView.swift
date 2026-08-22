@@ -82,7 +82,7 @@ struct HomeView: View {
                 Spacer()
             }
         }
-        .navigationTitle("幻境2")
+        .navigationTitle("幻境星空")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
