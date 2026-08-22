@@ -131,13 +131,9 @@ struct MonitorLoginView: View {
                     
                     // 登录表单
                     VStack(spacing: 16) {
-                        // ⭐ 2026-08-22 需求：账号要显示——放登录按钮正上方，半透明胶囊衬深色星空背景
+                        // ⭐ 2026-08-22 需求：账号胶囊只留账号本身——「账号」前缀文字和头像图标都去掉
                         //   （登录不输密码：本地保存值，无则默认 123456）
                         HStack(spacing: 8) {
-                            Image(systemName: "person.circle.fill")
-                                .font(.system(size: 18))
-                                .foregroundColor(hasLocalAccount ? Color(hex: "8ED6FF") : .white.opacity(0.6))
-                            
                             if isFetchingAccount {
                                 ProgressView()
                                     .scaleEffect(0.7)
@@ -146,7 +142,7 @@ struct MonitorLoginView: View {
                                     .font(.system(size: 15))
                                     .foregroundColor(.white.opacity(0.8))
                             } else if hasLocalAccount {
-                                Text("账号 \(username)")
+                                Text(username)
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.white)
                                 if accountRecovered {
@@ -186,27 +182,15 @@ struct MonitorLoginView: View {
                         .background(
                             GeometryReader { geo in
                                 ZStack(alignment: .leading) {
-                                    // ⭐ 2026-08-22 悬浮效果：渐变底色（上浅下深有立体感）
-                                    if isLoading {
-                                        Color.gray
-                                    } else {
-                                        LinearGradient(
-                                            colors: [Color(hex: "4DA8FF"), Color(hex: "1B6DF0")],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        )
-                                    }
+                                    // ⭐ 2026-08-22 需求：按钮样式与账号胶囊统一（半透明白胶囊）
+                                    Color.white.opacity(isLoading ? 0.08 : 0.14)
                                     // 按压进度条（白色高亮从左往右推进到 8s 满格）
                                     Color.white.opacity(0.30)
                                         .frame(width: geo.size.width * CGFloat(holdProgress))
                                 }
                             }
                         )
-                        .cornerRadius(14)
-                        // ⭐ 悬浮效果：蓝色光晕 + 下方投影，按下时收拢（像按进去）
-                        .shadow(color: Color(hex: "1B6DF0").opacity(holdStartTime != nil ? 0.25 : 0.55),
-                                radius: holdStartTime != nil ? 6 : 16, y: holdStartTime != nil ? 3 : 8)
-                        .shadow(color: Color.black.opacity(0.25), radius: 4, y: 2)
+                        .clipShape(Capsule())
                         .contentShape(Rectangle())
                         .scaleEffect(holdStartTime != nil ? 0.97 : 1.0)
                         .animation(.easeOut(duration: 0.15), value: holdStartTime != nil)

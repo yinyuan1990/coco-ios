@@ -78,18 +78,7 @@ struct SplashView: View {
                 .scaleEffect(logoScale)
                 .opacity(logoOpacity)
 
-                // App 名称
-                Text("幻境星空")
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.white, .white.opacity(0.8)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                    .opacity(logoOpacity)
-                    .padding(.top, 10)
+                // ⭐ 2026-08-22 需求：Splash 不再显示「幻境星空」App 名，只留 sparkles 图标
 
                 Spacer()
 
