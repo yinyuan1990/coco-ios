@@ -63,6 +63,12 @@ struct MonitorLoginView: View {
     @State private var showUserAgreement = false
     @State private var showPrivacyPolicy = false
     @State private var showAlreadyBoundAlert = false  // 已绑定账号提示
+    // ⭐ 2026-08-22：按住登录按钮 8 秒自动复制设备ID（手动计时实现——系统 onLongPressGesture
+    //   在 8s 这种超长时长下不可靠，且无过程反馈）
+    @State private var holdStartTime: Date? = nil      // 本次按压开始时间（nil=未按压）
+    @State private var holdProgress: Double = 0        // 按压进度 0~1（驱动按钮上的进度条）
+    @State private var holdCopyFired = false           // 本次按压已触发复制（松手不再当点按）
+    @State private var holdTimer: Timer? = nil
     // ⭐ 强制更新（总后台「App更新配置」下发最低版本+下载地址，本地版本低则弹不可绕过弹窗）
     @State private var showForceUpdate = false
     @State private var forceUpdateMessage = ""
@@ -131,32 +137,44 @@ struct MonitorLoginView: View {
                         // ⭐ 2026-08-22 需求：账号展示行去掉（账号获取逻辑不变，只是不再显示）；
                         //   登录不输密码（本地保存值，无则默认 123456）
                         
-                        // 登录按钮：轻点=登录；⭐ 按住 8 秒=自动复制设备ID（替代明放的复制按钮，作隐藏售后入口）
+                        // 登录按钮：轻点=登录；⭐ 按住 8 秒=自动复制设备ID（隐藏售后入口）。
+                        //   手动计时实现：按住 1.5s 后按钮变提示文案+进度条，满 8s 震动+复制+弹窗。
                         HStack {
                             if isLoading {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                     .scaleEffect(0.8)
                             }
-                            Text(getLoginButtonText())
-                                .font(.system(size: 18, weight: .semibold))
+                            Text(loginButtonLabel)
+                                .font(.system(size: holdHintVisible ? 15 : 18, weight: .semibold))
                                 .foregroundColor(.white)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
-                        .background(isLoading ? Color.gray : Color.blue)
+                        .background(
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    (isLoading ? Color.gray : Color.blue)
+                                    // 按压进度条（白色高亮从左往右推进到 8s 满格）
+                                    Color.white.opacity(0.30)
+                                        .frame(width: geo.size.width * CGFloat(holdProgress))
+                                }
+                            }
+                        )
                         .cornerRadius(12)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            guard !isLoading else { return }
-                            handleLogin()
-                        }
-                        .onLongPressGesture(minimumDuration: 8) {
-                            let deviceId = DeviceIDManager.shared.getDeviceID()
-                            UIPasteboard.general.string = deviceId
-                            UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            showAlert(message: "设备ID已复制：\n\(deviceId)")
-                        }
+                        .scaleEffect(holdStartTime != nil ? 0.97 : 1.0)
+                        .animation(.easeOut(duration: 0.15), value: holdStartTime != nil)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in
+                                    guard !isLoading, holdStartTime == nil else { return }
+                                    beginHoldTracking()
+                                }
+                                .onEnded { _ in
+                                    endHoldTracking()
+                                }
+                        )
                         .padding(.top, 10)
 
                         // 注册链接（老样式：没有账号时显示）
@@ -433,6 +451,67 @@ struct MonitorLoginView: View {
         .disabled(false)  // SRT 仍可点击以弹出提示
     }
 
+    // MARK: - ⭐ 按住登录按钮 8 秒复制设备ID（手动计时）
+    
+    private static let holdCopyDuration: Double = 8.0   // 触发复制需按住的秒数
+    private static let holdHintDelay: Double = 1.5      // 按住超过这个时长才切提示文案（避免正常点按闪动）
+    
+    /// 按压提示是否已出现（超过 1.5s）
+    private var holdHintVisible: Bool {
+        holdStartTime != nil && holdProgress >= Self.holdHintDelay / Self.holdCopyDuration
+    }
+    
+    /// 按钮文案：按住时显示剩余秒数提示，平时显示登录状态文案
+    private var loginButtonLabel: String {
+        if holdHintVisible && !holdCopyFired {
+            let remaining = max(0, Int(ceil(Self.holdCopyDuration * (1 - holdProgress))))
+            return "继续按住 \(remaining) 秒复制设备ID"
+        }
+        return getLoginButtonText()
+    }
+    
+    /// 手指按下：开始计时，0.1s 步进刷进度条；满 8s 复制设备ID+震动+弹窗
+    private func beginHoldTracking() {
+        holdStartTime = Date()
+        holdCopyFired = false
+        holdProgress = 0
+        
+        let timer = Timer(timeInterval: 0.1, repeats: true) { _ in
+            guard let start = holdStartTime else { return }
+            let elapsed = Date().timeIntervalSince(start)
+            holdProgress = min(elapsed / Self.holdCopyDuration, 1.0)
+            
+            if elapsed >= Self.holdCopyDuration && !holdCopyFired {
+                holdCopyFired = true
+                holdTimer?.invalidate()
+                holdTimer = nil
+                
+                let deviceId = DeviceIDManager.shared.getDeviceID()
+                UIPasteboard.general.string = deviceId
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showAlert(message: "设备ID已复制到剪贴板：\n\(deviceId)")
+            }
+        }
+        // .common 模式：手指按住期间 RunLoop 可能进 tracking 模式，默认模式的 Timer 会被饿死
+        RunLoop.main.add(timer, forMode: .common)
+        holdTimer = timer
+    }
+    
+    /// 手指松开：快速点按（<1.5s）当登录；按了一半松手只取消不登录；已触发复制则啥也不做
+    private func endHoldTracking() {
+        holdTimer?.invalidate()
+        holdTimer = nil
+        let elapsed = holdStartTime.map { Date().timeIntervalSince($0) } ?? 0
+        let copied = holdCopyFired
+        holdStartTime = nil
+        holdProgress = 0
+        holdCopyFired = false
+        
+        if !copied && elapsed < Self.holdHintDelay && !isLoading {
+            handleLogin()
+        }
+    }
+    
     private func getLoginButtonText() -> String {
         switch loginStep {
         case .idle:
