@@ -85,9 +85,8 @@ struct MonitorLoginView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                // 底层垫星空同色，避免缩放动画瞬间露出 NavigationView 默认白底
+        ZStack {
+                // 底层垫星空同色，避免任何布局空隙露出系统默认白底
                 Color(red: 0.07, green: 0.04, blue: 0.18)
                     .ignoresSafeArea()
                 
@@ -271,9 +270,7 @@ struct MonitorLoginView: View {
             .onTapGesture {
                 hideKeyboard()
             }
-        }
-        .navigationBarHidden(true)
-        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(.dark)
         .onAppear {
             loadLocalAccountInfo()
             // ⭐ 2026-08-17：本地没账号（重装/换机/老用户清数据）→ 按设备ID到服务器找回
@@ -873,35 +870,37 @@ struct RoundedCorner: Shape {
 //   原 cocologin.gif 39.4MB 且正中烧死「我的水印」白字（delogo 修补出白色拖影带，不可用），
 //   改为：静态图 login_bg_static（150KB JPEG）缓慢呼吸缩放（Ken Burns）+ Canvas 星光闪烁层。
 struct LoginAnimatedBackground: View {
-    @State private var zoomIn = false
-    
     var body: some View {
-        GeometryReader { geo in
-            // 底图始终比屏幕大一圈（1.18x），缩放在 1.0~1.08 之间——最小时也盖住刘海/状态栏，
-            // 不会在缩回 1.0 时露出白边（scaleEffect 从中心缩放，刚好铺满的图一缩小顶部就会漏底）。
-            let w = geo.size.width
-            let h = geo.size.height
-            ZStack {
-                Image("login_bg_static")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: w * 1.18, height: h * 1.18)
-                    .scaleEffect(zoomIn ? 1.08 : 1.0)
-                    .animation(.easeInOut(duration: 9).repeatForever(autoreverses: true), value: zoomIn)
-                    .position(x: w / 2, y: h / 2)
-                
-                TwinkleStarsOverlay()
+        // 缩放用 TimelineView 按正弦波驱动，不用 SwiftUI 隐式 animation——
+        // `.animation(repeatForever)` 会泄漏到父视图，把 NavigationView/安全区一起做动画，顶部闪白边。
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+            GeometryReader { geo in
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                let pulse = 0.5 + 0.5 * sin(t * (2 * .pi / 18.0))  // 18s 一个来回
+                let scale = 1.0 + 0.08 * pulse
+                let w = geo.size.width
+                let h = geo.size.height
+                ZStack {
+                    Image("login_bg_static")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: w * 1.22, height: h * 1.22)
+                        .scaleEffect(scale)
+                        .position(x: w / 2, y: h / 2)
+                    
+                    TwinkleStarsOverlay(date: timeline.date)
+                }
             }
         }
         .clipped()
         .ignoresSafeArea()
         .allowsHitTesting(false)
-        .onAppear { zoomIn = true }
     }
 }
 
 /// 星光闪烁层：固定种子随机布 26 颗小星，按各自相位/速度用正弦波调透明度（20fps 足够，省电）
 private struct TwinkleStarsOverlay: View {
+    let date: Date
     private struct Star {
         let x: CGFloat      // 0~1 相对坐标
         let y: CGFloat
@@ -925,15 +924,13 @@ private struct TwinkleStarsOverlay: View {
     }()
     
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
-            Canvas { context, size in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                for star in Self.stars {
-                    let alpha = 0.15 + 0.65 * (0.5 + 0.5 * sin(t * star.speed + star.phase))
-                    let rect = CGRect(x: star.x * size.width, y: star.y * size.height,
-                                      width: star.radius * 2, height: star.radius * 2)
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
-                }
+        Canvas { context, size in
+            let t = date.timeIntervalSinceReferenceDate
+            for star in Self.stars {
+                let alpha = 0.15 + 0.65 * (0.5 + 0.5 * sin(t * star.speed + star.phase))
+                let rect = CGRect(x: star.x * size.width, y: star.y * size.height,
+                                  width: star.radius * 2, height: star.radius * 2)
+                context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
             }
         }
     }
