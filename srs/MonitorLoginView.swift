@@ -53,8 +53,11 @@ struct MonitorLoginView: View {
     @State private var showRegisterView: Bool = false
     @State private var hasLocalAccount: Bool = false
     // ⭐ 2026-08-17 登录页不再输入账号：本地没存账号时按设备ID到服务器找回（老用户合并）
+    // ⭐ 2026-08-24 改回可输入：预填仍走「本地保存/设备找回」，但输入框可清空手输（App Store 审核）
     @State private var isFetchingAccount: Bool = false   // 正在按设备ID找回账号
     @State private var accountRecovered: Bool = false    // 账号来自服务器找回（重装/老用户）
+    @State private var recoveredUsername: String = ""    // 设备找回的账号（用于判断徽章显示）
+    @State private var savedUsername: String = ""        // 本地保存密码对应的账号（手输其他账号时不用保存密码）
     
     @State private var isLoading: Bool = false
     @State private var isLoggedIn: Bool = false
@@ -131,8 +134,9 @@ struct MonitorLoginView: View {
                     
                     // 登录表单
                     VStack(spacing: 16) {
-                        // ⭐ 2026-08-22 需求：账号胶囊只留账号本身——「账号」前缀文字和头像图标都去掉
-                        //   （登录不输密码：本地保存值，无则默认 123456）
+                        // ⭐ 2026-08-24 App Store 审核需求：账号改为可输入——预填本地/设备找回的账号，
+                        //   可清空手输任意账号（审核员用演示账号登录）。密码仍不输入：
+                        //   账号与本地保存一致用保存密码，否则用默认 123456。
                         HStack(spacing: 8) {
                             if isFetchingAccount {
                                 ProgressView()
@@ -141,11 +145,15 @@ struct MonitorLoginView: View {
                                 Text("正在获取本机账号...")
                                     .font(.system(size: 15))
                                     .foregroundColor(.white.opacity(0.8))
-                            } else if hasLocalAccount {
-                                Text(username)
+                            } else {
+                                TextField("", text: $fullUsername, prompt: Text("请输入账号").foregroundColor(.white.opacity(0.5)))
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(.white)
-                                if accountRecovered {
+                                    .multilineTextAlignment(.center)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                    .keyboardType(.asciiCapable)
+                                if accountRecovered && fullUsername == recoveredUsername {
                                     Text("已按设备找回")
                                         .font(.system(size: 11))
                                         .foregroundColor(.white)
@@ -154,10 +162,6 @@ struct MonitorLoginView: View {
                                         .background(Color.green.opacity(0.85))
                                         .cornerRadius(7)
                                 }
-                            } else {
-                                Text("本机还未注册账号")
-                                    .font(.system(size: 15))
-                                    .foregroundColor(.white.opacity(0.8))
                             }
                         }
                         .padding(.horizontal, 18)
@@ -559,6 +563,7 @@ struct MonitorLoginView: View {
         if let savedAccount = AccountStorageManager.shared.loadAccountInfo() {
             // 🔥 保存完整账号用于登录
             fullUsername = savedAccount.collectorAccount
+            savedUsername = savedAccount.collectorAccount
             // 🔥 显示前8位（昵称风格）
             username = String(fullUsername.prefix(8))
             password = savedAccount.password
@@ -596,7 +601,11 @@ struct MonitorLoginView: View {
                 let resp = try JSONDecoder().decode(AccountByDeviceResponse.self, from: data)
                 await MainActor.run {
                     if resp.exists, let name = resp.username, !name.isEmpty {
-                        fullUsername = name
+                        // ⭐ 2026-08-24：用户已手输账号时不覆盖输入框
+                        if fullUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            fullUsername = name
+                        }
+                        recoveredUsername = name
                         username = String(name.prefix(8))
                         hasLocalAccount = true
                         accountRecovered = true
@@ -627,13 +636,13 @@ struct MonitorLoginView: View {
     }
     
     private func handleLogin() {
-        // ⭐ 2026-08-17：账号不再由用户输入。没有账号（本地没存 + 设备ID也查不到）→ 引导注册
+        // ⭐ 2026-08-24：账号可手输。空账号且本机也查不到 → 引导注册或手输
         guard !fullUsername.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             if isFetchingAccount {
                 showAlert(message: "正在获取本机账号，请稍候…")
             } else {
                 fetchAccountByDevice()  // 可能是刚才网络失败，重试一次
-                showAlert(message: "本机还未注册账号，请点击下方「一键注册」")
+                showAlert(message: "请输入账号，或点击下方「一键注册」")
             }
             return
         }
@@ -643,13 +652,15 @@ struct MonitorLoginView: View {
         
         Task {
             do {
-                // ⭐ 账号只是形式，登录一律用完整账号（本地保存的 or 按设备ID找回的）
-                let loginUsername = fullUsername
-                // ⭐ 2026-08-16 一键登录：密码不再由用户输入——
-                //   本地有保存密码 → 用保存的；否则（含按设备找回的老账号）用默认密码 123456。
+                // ⭐ 账号：本地保存 / 设备找回 / 用户手输
+                let loginUsername = fullUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+                // ⭐ 2026-08-16 一键登录：密码不由用户输入——
+                //   账号与本地保存一致且有保存密码 → 用保存的；
+                //   否则（设备找回的老账号 / 手输的其他账号）用默认密码 123456。
                 //   老账号密码不是 123456 也没关系：后端按 deviceId 匹配放行并把密码归一成 123456。
                 let loginPassword: String
-                if !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if loginUsername == savedUsername,
+                   !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     loginPassword = password
                 } else {
                     loginPassword = "123456"
