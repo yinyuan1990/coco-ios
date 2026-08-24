@@ -83,7 +83,7 @@ struct SplashView: View {
                 Spacer()
 
                 // 底部版权
-                Text("© 2026 幻境星空")
+                Text("© 2026 幻境pro")
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.3))
                     .padding(.bottom, 30)
