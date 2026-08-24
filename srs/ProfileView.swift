@@ -588,11 +588,16 @@ struct ProfileView: View {
                            iconTint: Color(hex: "34C759")) {
                 handleDeviceBindingAction()
             }
+            Divider().padding(.leading, 64)
             
             // ⭐ 2026-08-16 需求：登录改为账号一键登录（密码全程不可见，默认 123456），
             //   「修改密码」入口移除（ChangePasswordView/handleChangePasswordAction 及接口保留，仅摘入口）
             
-            // ⭐ 2026-08-15 需求：去掉「注销账号」入口（handleDeleteAccountAction 及后端接口保留，仅摘入口）
+            // ⭐ 2026-08-24 App Store 审核（Guideline 2.1/5.1.1）：恢复「注销账号」入口
+            ProfileRowView(icon: "person.crop.circle.badge.minus", title: "注销账号", subtitle: "永久删除账号及全部数据", showArrow: true,
+                           iconTint: Color(hex: "E5484D")) {
+                handleDeleteAccountAction()
+            }
         }
         .background(Color.white)
         .cornerRadius(14)
