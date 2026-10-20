@@ -589,6 +589,13 @@ struct ProfileView: View {
                 handleDeviceBindingAction()
             }
             Divider().padding(.leading, 64)
+
+            // 已绑定的 PC 控制端：查看 / 解绑
+            ProfileRowView(icon: "list.bullet.circle", title: "已绑定列表", subtitle: "查看和解绑已绑定的 PC 控制端", showArrow: true,
+                           iconTint: Color(hex: "1197D6")) {
+                showingBindingList = true
+            }
+            Divider().padding(.leading, 64)
             
             // ⭐ 2026-08-16 需求：登录改为账号一键登录（密码全程不可见，默认 123456），
             //   「修改密码」入口移除（ChangePasswordView/handleChangePasswordAction 及接口保留，仅摘入口）
